@@ -1,0 +1,57 @@
+#!/bin/bash
+# Install the device agent as a launchd LaunchAgent (starts at login, restarts on crash).
+# Pair first:  node agent/agent.js pair https://mcp.example.com --device-id my-mac
+# Then:        bash deploy/install-macos.sh            (DRY_RUN=1 only writes the plist)
+# The agent runs from ~/.local/share/remote-mcp-agent because launchd cannot read ~/Documents, ~/Desktop, ~/Downloads (TCC).
+# Best: clone this repo there:  git clone https://github.com/<you>/SelfHostDesktopMCP ~/.local/share/remote-mcp-agent
+# Update later with: bash deploy/update.sh
+set -euo pipefail
+cd "$(dirname "$0")/.."
+NODE=${NODE:-$(command -v node)}; DST="$HOME/.local/share/remote-mcp-agent"; LABEL=com.selfhost.remote-mcp-agent
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+[ -f "$HOME/.config/remote-mcp/device.json" ] || { echo "no device config; run 'node agent/agent.js pair ...' first"; exit 1; }
+mkdir -p "$DST/agent" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+if [ "$(pwd -P)" != "$(cd "$DST" && pwd -P)" ]; then   # installing from a different checkout: copy; otherwise run in place
+  cp agent/*.js "$DST/agent/"; cp package.json package-lock.json "$DST/"
+fi
+(cd "$DST" && npm install --omit=dev --silent)
+cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key><array><string>$NODE</string><string>$DST/agent/agent.js</string></array>
+  <key>WorkingDirectory</key><string>$DST</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$(dirname "$NODE"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/remote-mcp-agent.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/remote-mcp-agent.log</string>
+</dict></plist>
+EOF
+plutil -lint "$PLIST"
+[ -z "${DRY_RUN:-}" ] || { echo "dry run: wrote $PLIST"; exit 0; }
+# launchd may briefly retain the prior job after bootout; retry rather than leaving the agent offline.
+DOMAIN="gui/$(id -u)"
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+fi
+installed=0
+for attempt in 1 2 3 4 5 6; do
+  if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
+    installed=1
+    break
+  fi
+  if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+    installed=1
+    break
+  fi
+  sleep "$attempt"
+done
+if [[ "$installed" -ne 1 ]]; then
+  echo "ERROR: launchd could not load $LABEL; inspect: launchctl print $DOMAIN" >&2
+  exit 1
+fi
+launchctl print "$DOMAIN/$LABEL" >/dev/null
+echo "started; log: ~/Library/Logs/remote-mcp-agent.log"

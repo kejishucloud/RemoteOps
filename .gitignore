@@ -1,0 +1,42 @@
+# 依赖及构建产物
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+*.log
+logs/
+.DS_Store
+__pycache__/
+*.pyc
+
+# 禁止提交真实凭据、设备配置与数据库
+secrets/
+.secret/
+.env
+.env.*
+!.env.example
+device.json
+device.json.*
+policy.json
+owner-token
+device-secret
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.ovpn
+*.mobileconfig
+*.bak
+*.backup
+
+# 本地环境
+.local/
+.runtime/
+.venv/
