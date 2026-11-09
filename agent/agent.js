@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { loadPolicy, check } from './policy.js';
 import { resolveBackend } from './backends.js';
+import { AgentUiResources, discoverUiResources } from './ui-resources.js';
 
 const PROTOCOL_VERSION = 1;
 const PING_MS = Number(process.env.RMCP_PING_MS) || 20_000;
@@ -128,6 +129,8 @@ async function connectStdio(command, onExit) {
   transport.onclose = () => { if (!shuttingDown) onExit(); };
   return {
     listTools: async () => (await client.listTools()).tools,
+    listResources: async () => client.listResources(),
+    readResource: async (uri) => client.readResource({ uri }),
     callTool: (name, a, timeout) => client.callTool({ name, arguments: a }, undefined, { timeout, resetTimeoutOnProgress: true }),
     close: () => client.close(),
   };
@@ -137,6 +140,8 @@ function mockConn() {
   const tools = [{ name: 'echo', description: 'Mock echo tool', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }];
   return {
     listTools: async () => tools,
+    listResources: async () => ({ resources: [] }),
+    readResource: async () => { throw new Error('No mock UI resources'); },
     callTool: async (name, a) => {
       if (name !== 'echo') throw Object.assign(new Error(`unknown tool ${name}`), { code: 'UNKNOWN_TOOL' });
       return { content: [{ type: 'text', text: `echo: ${a.text ?? ''}` }] };
@@ -162,12 +167,13 @@ function rebuild() {
   }
 }
 const exposedTools = () => [...routes.values()].map((r) => r.tool);
+const uiResources = new AgentUiResources(() => slots, () => routes);
 const statusList = () => [...slots.values()].map((s) => ({
   name: s.name, builtin: !!s.builtin, template: s.template, status: s.status, error: s.error ?? null, prefix: s.prefix,
   tools: s.tools.map((t) => ({ name: t.name, description: String(t.description || '').slice(0, 160) })), enabled: enabledNames(s),
 }));
 const tx = (obj) => sock && sock.readyState === 1 && sock.send(JSON.stringify(obj));
-const announce = () => { rebuild(); tx({ type: 'backends_status', backends: statusList() }); tx({ type: 'tools_changed', tools: exposedTools() }); };
+const announce = () => { rebuild(); tx({ type: 'backends_status', backends: statusList() }); tx({ type: 'tools_changed', tools: exposedTools() }); tx({ type: 'resources_changed', resources: uiResources.list() }); };
 
 async function stopSlot(slot) { slot.stopped = true; const c = slot.conn; slot.conn = null; await c?.close().catch(() => {}); }
 
@@ -178,7 +184,7 @@ async function reconcile(desired) {
   for (const d of desired) {
     const existing = slots.get(d.name);
     const sig = JSON.stringify([d.template, d.params ?? {}]);
-    const base = { name: d.name, template: d.template, sig, tools: [], error: null, prefix: '', defaultDisabled: [], enabledPref: d.enabled_tools ?? null };
+    const base = { name: d.name, template: d.template, sig, tools: [], resources: [], error: null, prefix: '', defaultDisabled: [], enabledPref: d.enabled_tools ?? null };
     if (d.name === 'desktop-commander') continue; // built in, not managed remotely
     if (d.enabled === false) {
       if (existing?.status !== 'disabled') { if (existing) await stopSlot(existing); slots.set(d.name, { ...base, status: 'disabled' }); }
@@ -196,7 +202,7 @@ async function reconcile(desired) {
     try {
       const conn = await connectStdio(r.command, () => { if (slot.stopped) return; slot.status = 'error'; slot.error = 'server exited'; slot.tools = []; slot.conn = null; log('WARN', `backend ${slot.name} exited`); announce(); });
       if (slot.stopped) return conn.close().catch(() => {});
-      slot.conn = conn; slot.tools = await conn.listTools(); slot.status = 'running';
+      slot.conn = conn; slot.tools = await conn.listTools(); slot.resources = await discoverUiResources(conn); slot.status = 'running';
       log('INFO', `backend ${slot.name} running (${slot.tools.length} tools)`);
     } catch (e) { slot.status = 'error'; slot.error = String(e.message).slice(0, 200); log('WARN', `backend ${slot.name} failed: ${slot.error}`); }
   }));
@@ -210,7 +216,7 @@ async function startBuiltin() {
     const command = cfg.desktop_commander?.command ?? ['npx', '-y', '@wonderwhy-er/desktop-commander@latest'];
     conn = await connectStdio(command, () => { log('ERROR', 'local MCP server exited'); process.exit(1); }); // supervisor restarts us
   }
-  slots.set('desktop-commander', { name: 'desktop-commander', builtin: true, template: 'builtin', prefix: '', status: 'running', tools: await conn.listTools(), defaultDisabled: [], enabledPref: null, conn });
+  slots.set('desktop-commander', { name: 'desktop-commander', builtin: true, template: 'builtin', prefix: '', status: 'running', tools: await conn.listTools(), resources: await discoverUiResources(conn), defaultDisabled: [], enabledPref: null, conn });
   rebuild();
 }
 
@@ -225,7 +231,7 @@ async function connect() {
     ws.send(JSON.stringify({
       type: 'hello', device_id: cfg.device_id, protocol_version: PROTOCOL_VERSION,
       name: cfg.name, platform: `${process.platform}-${process.arch}`, hostname: os.hostname(),
-      tools: exposedTools(), builtin_tools: [...routes.values()].filter((r) => r.slot.builtin).map((r) => r.tool), custom_backends: policy.allow_custom_backends,
+      tools: exposedTools(), builtin_tools: [...routes.values()].filter((r) => r.slot.builtin).map((r) => r.tool), resources: uiResources.list(), custom_backends: policy.allow_custom_backends,
     }));
     tx({ type: 'backends_status', backends: statusList() });
     pingTimer = setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ type: 'ping' })), PING_MS);
@@ -246,6 +252,8 @@ async function connect() {
     const reply = (body) => ws.readyState === 1 && ws.send(JSON.stringify({ type: 'response', request_id: m.request_id, ...body }));
     try {
       if (m.method === 'tools/list') return reply({ result: { tools: exposedTools() } });
+      if (m.method === 'resources/list') return reply({ result: { resources: uiResources.list() } });
+      if (m.method === 'resources/read') return reply({ result: await uiResources.read(m.params) });
       if (m.method === 'tools/call') {
         const route = routes.get(m.params.name);
         if (!route) return reply({ error: { code: 'UNKNOWN_TOOL', message: `unknown tool ${String(m.params.name).slice(0, 80)}` } });
