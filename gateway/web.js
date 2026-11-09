@@ -10,10 +10,11 @@ import { sha256, now } from './db.js';
 import { newTotpSecret, verifyTotp, otpauthUri } from './totp.js';
 import { CATALOG, NAME_RE } from '../agent/backends.js';
 import { ConsoleService } from './console-service.js';
+import { createGoogleLogin } from './google-login.js';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
 const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/oauth.css': ['oauth.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
-const IDLE_MS = 30 * 60_000, MAX_MS = 12 * 3600_000, LOCK_WINDOW = 15 * 60_000, LOCK_AFTER = 5;
+const IDLE_MS = 30 * 60_000, MAX_MS = 12 * 3600_000, REMEMBER_MS = 30 * 24 * 3600_000, LOCK_WINDOW = 15 * 60_000, LOCK_AFTER = 5;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
@@ -25,6 +26,7 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
   const set = (k, v) => db.prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));
   const del = (k) => db.prepare('DELETE FROM settings WHERE key=?').run(k);
   const consoleService = new ConsoleService({ db, publicUrl, listDevices });
+  const google = createGoogleLogin({ db, publicUrl, log });
 
   const baseHeaders = () => ({
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
@@ -52,12 +54,33 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
     const row = db.prepare('SELECT * FROM web_sessions WHERE token_hash=?').get(sha256(tok));
     if (!row) return null;
     const t = Date.now();
-    if (t - row.last_seen > IDLE_MS || t - row.created_at > MAX_MS) { db.prepare('DELETE FROM web_sessions WHERE token_hash=?').run(row.token_hash); return null; }
+    if (t - row.last_seen > (row.idle_ms ?? IDLE_MS) || t > (row.expires_at ?? row.created_at + MAX_MS)) { db.prepare('DELETE FROM web_sessions WHERE token_hash=?').run(row.token_hash); return null; }
     db.prepare('UPDATE web_sessions SET last_seen=? WHERE token_hash=?').run(t, row.token_hash);
     return row;
   }
   const cookie = (v, maxAge) => `rmcp_session=${v}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
-  const sweep = () => db.prepare('DELETE FROM web_sessions WHERE last_seen < ? OR created_at < ?').run(Date.now() - IDLE_MS, Date.now() - MAX_MS);
+  // 严格服务端过期，不依赖客户端 Cookie 的有效期。
+  const sweep = () => db.prepare('DELETE FROM web_sessions WHERE (expires_at IS NOT NULL AND expires_at < ?) OR (expires_at IS NULL AND created_at < ?) OR (idle_ms IS NOT NULL AND last_seen + idle_ms < ?) OR (idle_ms IS NULL AND last_seen < ?)')
+    .run(Date.now(), Date.now() - MAX_MS, Date.now(), Date.now() - IDLE_MS);
+
+  /**
+   * 创建隔离的管理员后台会话。
+   * @param {boolean} remember 是否保持登录 30 天
+   * @param {string} provider 身份提供方
+   * @param {string|null} subject 已验证的账户主体
+   * @returns {{ csrf: string, cookie: string }} CSRF 与会话 Cookie
+   */
+  function issueSession(remember, provider, subject = null) {
+    sweep();
+    const duration = remember ? REMEMBER_MS : MAX_MS;
+    const idle = remember ? REMEMBER_MS : IDLE_MS;
+    const tok = crypto.randomBytes(32).toString('base64url');
+    const csrf = crypto.randomBytes(24).toString('base64url');
+    const t = Date.now();
+    db.prepare('INSERT INTO web_sessions (token_hash,csrf,created_at,last_seen,expires_at,idle_ms,provider,subject) VALUES (?,?,?,?,?,?,?,?)')
+      .run(sha256(tok), csrf, t, t, t + duration, idle, provider, subject);
+    return { csrf, cookie: provider === 'google' ? cookie(tok, Math.floor(duration / 1000)).replace('SameSite=Strict', 'SameSite=Lax') : cookie(tok, Math.floor(duration / 1000)) };
+  }
 
   // ---- setup (only while no TOTP is active) ----
   async function setup(req, res, p) {
@@ -95,7 +118,7 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
     const p = url.pathname.replace('/admin/api', '');
     if (p === '/session' && req.method === 'GET') {
       const s = sessionOf(req);
-      return sendJson(res, 200, s ? { authenticated: true, csrf: s.csrf } : { authenticated: false, enrolled: !!get('totp_secret') }), true;
+      return sendJson(res, 200, s ? { authenticated: true, csrf: s.csrf } : { authenticated: false, enrolled: !!get('totp_secret'), ...(google.active ? { google_enabled: true } : {}) }), true;
     }
     if (req.method !== 'POST' && req.method !== 'GET') return sendJson(res, 405, { error: 'method not allowed' }), true;
     if (req.method === 'POST') {
@@ -111,10 +134,9 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
       const step = verifyTotp(secret, m.code, { lastStep: Number(get('totp_last_step') ?? -1) });
       if (!step) { fails.push(Date.now()); log('WARN', 'web login: bad code'); return sendJson(res, 401, { error: 'invalid code' }), true; }
       set('totp_last_step', step); fails.length = 0; sweep();
-      const tok = crypto.randomBytes(32).toString('base64url'), csrf = crypto.randomBytes(24).toString('base64url');
-      db.prepare('INSERT INTO web_sessions VALUES (?,?,?,?)').run(sha256(tok), csrf, Date.now(), Date.now());
+      const { csrf, cookie: sessionCookie } = issueSession(m.remember === true, 'totp');
       log('INFO', 'web admin: signed in');
-      return sendJson(res, 200, { csrf }, { 'set-cookie': cookie(tok, MAX_MS / 1000) }), true;
+      return sendJson(res, 200, { csrf }, { 'set-cookie': sessionCookie }), true;
     }
 
     const s = sessionOf(req);
@@ -286,6 +308,11 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
         if (ASSETS[p] && req.method === 'GET') {
           const [file, type] = ASSETS[p];
           res.writeHead(200, { ...baseHeaders(), 'content-type': type }); res.end(fs.readFileSync(path.join(UI_DIR, file))); return true;
+        }
+        if (p === '/admin/auth/google/start' && req.method === 'GET') { google.start(req, res, url); return true; }
+        if (p === '/admin/auth/google/callback' && req.method === 'GET') {
+          await google.finish(req, res, url, (remember, email, sub) => issueSession(remember, 'google', sub).cookie);
+          return true;
         }
         if (p.startsWith('/admin/setup')) return await setup(req, res, p);
         if (p.startsWith('/admin/api/')) return await api(req, res, url);

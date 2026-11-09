@@ -285,3 +285,12 @@ tbody tr:hover { background:var(--hover); }
 @media(prefers-reduced-motion:reduce) {
   *,*::before,*::after { transition-duration:0.01ms!important; scroll-behavior:auto!important; }
 }
+
+/* 管理员联合登录：统一形态，不引入外部样式或 JS。 */
+.remember-choice { display:flex; align-items:center; gap:9px; margin:4px 0 14px; font-size:13px; color:var(--fg); cursor:pointer; }
+.remember-choice .remember-input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent); }
+.google-login-box { width:100%; margin:18px auto 0; }
+.auth-or { display:block; text-align:center; color:var(--muted); font-size:12px; margin-bottom:16px; }
+.google-login-link { display:flex; justify-content:center; align-items:center; gap:12px; min-height:44px; text-decoration:none; font-size:13px; font-weight:650; border:1px solid var(--line-strong); border-radius:8px; background:var(--card); color:var(--fg); }
+.google-login-link:hover { background:var(--hover); }
+.google-login-box .auth-helper { text-align:center; margin-top:12px; }

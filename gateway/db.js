@@ -110,6 +110,12 @@ export function openDb(path) {
       error_code  TEXT
     );
   `);
+  // 会话记住登录采用服务端持久化的过期时间，兼容此前数据库。
+  const sessionColumns = db.prepare('PRAGMA table_info(web_sessions)').all().map(c => c.name);
+  if (!sessionColumns.includes('expires_at')) db.exec('ALTER TABLE web_sessions ADD COLUMN expires_at INTEGER');
+  if (!sessionColumns.includes('idle_ms')) db.exec('ALTER TABLE web_sessions ADD COLUMN idle_ms INTEGER');
+  if (!sessionColumns.includes('provider')) db.exec("ALTER TABLE web_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'totp'");
+  if (!sessionColumns.includes('subject')) db.exec('ALTER TABLE web_sessions ADD COLUMN subject TEXT');
   // migrations for databases created by older versions
   if (!db.prepare('PRAGMA table_info(audit_logs)').all().some((c) => c.name === 'error_detail')) db.exec('ALTER TABLE audit_logs ADD COLUMN error_detail TEXT');
   return db;

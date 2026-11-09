@@ -61,8 +61,8 @@ test('setup: needs owner token, shows QR once, activates only with a valid code'
 
 test('login: replay of the enrolment code is refused; a fresh code works; cookie is hardened', async () => {
   assert.equal((await j('/login', { body: { code: lastCode }, c: null })).status, 401, 'same time step cannot be reused');
-  const r = await j('/login', { body: { code: nextCode(1) }, c: null }); assert.equal(r.status, 200);
-  const sc = r.headers.get('set-cookie'); assert.match(sc, /HttpOnly/); assert.match(sc, /SameSite=Strict/); assert.match(sc, /Path=\/admin/);
+  const r = await j('/login', { body: { code: nextCode(1), remember: true }, c: null }); assert.equal(r.status, 200);
+  const sc = r.headers.get('set-cookie'); assert.match(sc, /HttpOnly/); assert.match(sc, /SameSite=Strict/); assert.match(sc, /Path=\/admin/); assert.match(sc, /Max-Age=2592000/);
   cookie = sc.split(';')[0]; csrf = r.body.csrf; assert.ok(csrf);
   assert.equal((await j('/session')).body.authenticated, true);
 });

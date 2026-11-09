@@ -92,3 +92,7 @@ test/         单元与端到端测试
 ```
 
 许可证：MIT。感谢原作者及 Desktop Commander 开源贡献。
+
+## Google 登录
+
+管理后台支持 Google OpenID Connect 管理员白名单登录，以及可选 30 天保持登录。配置、风险和测试说明见 [Google 登录文档](docs/GOOGLE_LOGIN.md)。
