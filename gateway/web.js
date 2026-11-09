@@ -12,7 +12,7 @@ import { CATALOG, NAME_RE } from '../agent/backends.js';
 import { ConsoleService } from './console-service.js';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
-const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
+const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/oauth.css': ['oauth.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
 const IDLE_MS = 30 * 60_000, MAX_MS = 12 * 3600_000, LOCK_WINDOW = 15 * 60_000, LOCK_AFTER = 5;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -34,8 +34,8 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
   const sendHtml = (res, code, body) => {
     res.writeHead(code, { ...baseHeaders(), 'content-type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>RemoteOps · 管理员验证设置</title><link rel="stylesheet" href="/admin/style.css"></head><body>
-<header class="bar"><a class="brand" href="/admin/"><span class="brand-icon" aria-hidden="true">R<span class="brand-slash">/</span></span><span class="brand-name"><strong>RemoteOps</strong><small>管理控制台</small></span></a><span class="bar-spacer"></span><span class="header-security">安全初始化</span></header>
-<div class="auth-page"><main class="auth-container setup-frame">${body}</main><footer class="auth-footer">管理员身份验证由自托管 Gateway 完成</footer></div></body></html>`);
+<header class="bar"><a class="brand" href="/admin/"><span class="brand-icon" aria-hidden="true">R<span class="brand-slash">/</span></span><span class="brand-name"><strong>RemoteOps</strong><small>管理控制台</small></span></a><span class="bar-spacer"></span><button id="locale-switch" class="ghost locale-switch" data-i18n-ignore="true" type="button" aria-label="Switch to English" title="English">EN</button><span class="header-security">安全初始化</span></header>
+<div class="auth-page"><main class="auth-container setup-frame">${body}</main><footer class="auth-footer">管理员身份验证由自托管 Gateway 完成</footer></div><script src="/admin/i18n.js"></script></body></html>`);
   };
   const body = async (req, limit = 8192) => {
     let n = 0; const c = [];

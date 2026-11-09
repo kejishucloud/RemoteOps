@@ -3,6 +3,7 @@
 // Consent requires an admin token, so registering a client alone grants nothing.
 import crypto from 'node:crypto';
 import { sha256, newSecret, now } from './db.js';
+import { sendOAuthHtml, consentHtml, mobileResultHtml, oauthErrorHtml } from './oauth-ui.js';
 
 const ACCESS_TTL = 3600, REFRESH_TTL = 30 * 86400, CODE_TTL = 300, MAX_CLIENTS = 200;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -19,13 +20,8 @@ export function createOAuth({ db, publicUrl, log }) {
     res.end(JSON.stringify(body));
   };
   const oerr = (res, code, error, description) => send(res, code, { error, error_description: description });
-  const html = (res, code, body) => {
-    res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'",
-      'x-frame-options': 'DENY' });
-    res.end(`<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Authorize</title>
-<style>body{font:16px system-ui;max-width:30rem;margin:3rem auto;padding:0 1rem}input,button{font:inherit;padding:.5rem;margin:.25rem 0}input{width:100%;box-sizing:border-box}code{background:#eee;padding:0 .25rem}.btn{display:block;text-align:center;padding:1rem;background:#2563eb;color:#fff;border-radius:10px;text-decoration:none;font-weight:600}</style>${body}`);
-  };
+  const html = (res, code, body) => sendOAuthHtml(res, code, body);
+
   async function readBody(req) {
     let n = 0; const c = [];
     for await (const ch of req) { n += ch.length; if (n > 64 * 1024) throw new Error('too large'); c.push(ch); }
@@ -92,8 +88,8 @@ export function createOAuth({ db, publicUrl, log }) {
     for (const [k, v] of Object.entries({ ...extra, ...(p.state ? { state: p.state } : {}), iss: issuer })) u.searchParams.set(k, v);
     if (req && MOBILE.test(req.headers['user-agent'] || '')) {
       const denied = extra.error === 'access_denied';
-      return html(res, 200, `<h1>${denied ? 'Cancelled' : 'Approved'}</h1><p>${denied ? 'Tap to go back.' : 'Tap the button to finish and return to the app.'}</p>
-<p><a class=btn href="${esc(u.toString())}">Return to ${esc(client?.client_name || 'the app')}</a></p>`);
+      return html(res, 200, mobileResultHtml(denied, u.toString(), client?.client_name));
+
     }
     res.writeHead(302, { location: u.toString(), 'cache-control': 'no-store' }); res.end();
   };
@@ -103,14 +99,14 @@ export function createOAuth({ db, publicUrl, log }) {
     const isPost = req.method === 'POST';
     const p = isPost ? Object.fromEntries(new URLSearchParams(await readBody(req))) : Object.fromEntries(url.searchParams);
     const chk = checkAuthzParams(p);
-    if (chk.fatal) return html(res, 400, `<h1>Error</h1><p>${esc(chk.fatal)}</p>`);
+    if (chk.fatal) return html(res, 400, oauthErrorHtml(chk.fatal));
     if (chk.redirectError) return redirectBack(res, p, chk.redirectError, req, chk.client);
 
     if (isPost) {
       if (p.action === 'deny') return redirectBack(res, p, { error: 'access_denied' }, req, chk.client);
       const recent = fails.filter((t) => Date.now() - t < 60_000);
       fails.length = 0; fails.push(...recent);
-      if (fails.length >= 5) return html(res, 429, '<h1>Too many attempts</h1><p>Wait a minute.</p>');
+      if (fails.length >= 5) return html(res, 429, oauthErrorHtml('Too many attempts. Wait a minute and try again.'));
       const h = sha256(p.owner_token || '');
       const admin = db.prepare('SELECT token_hash FROM client_tokens WHERE token_hash=? AND is_admin=1 AND revoked_at IS NULL').get(h);
       if (!admin) { fails.push(Date.now()); log('WARN', 'oauth consent: bad owner token'); return consentPage(res, p, chk.client, 'Invalid owner token.'); }
@@ -123,13 +119,9 @@ export function createOAuth({ db, publicUrl, log }) {
   }
   function consentPage(res, p, client, msg = '') {
     const hidden = FIELDS.filter((f) => p[f] != null).map((f) => `<input type=hidden name="${f}" value="${esc(p[f])}">`).join('');
-    html(res, 200, `<h1>Authorize remote access</h1>
-<p><b>${esc(client.client_name)}</b> wants to call tools on your remote devices (shell, files) through this gateway.</p>
-<p>It will be redirected to <code>${esc(new URL(p.redirect_uri).origin)}</code>.</p>${msg ? `<p style="color:#b00">${esc(msg)}</p>` : ''}
-<form method=post action="/authorize">${hidden}
-<label>Owner (admin) token<input type=password name=owner_token autocomplete=off autofocus></label>
-<button name=action value=approve>Approve</button> <button name=action value=deny>Deny</button></form>`);
+    return html(res, 200, consentHtml(client, p.redirect_uri, hidden, msg));
   }
+
 
   // ---- token ----
   function issue(client_id) {

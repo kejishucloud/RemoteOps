@@ -90,8 +90,17 @@ const pageInfo = {
 function navigate(name) {
   if (!pageInfo[name]) return;
   tab = name;
-  document.querySelectorAll('.tabs button').forEach((button) =>
-    button.classList.toggle('active', button.dataset.tab === name));
+  document.querySelectorAll('.tabs button').forEach((button) => {
+    const current = button.dataset.tab === name;
+    button.classList.toggle('active', current);
+    if (current) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  // 横向导航在窄屏时保证当前页面入口可见，不改变业务操作或路由。
+  const active = document.querySelector('.tabs button.active');
+  if (active && window.matchMedia('(max-width: 740px)').matches) {
+    active.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+  }
   render();
 }
 document.querySelectorAll('.tabs button').forEach((button) =>
@@ -129,7 +138,8 @@ async function renderDevices() {
     const platform = (d.platform || '').toLowerCase();
     const platformLabel = platform.includes('darwin') ? 'macOS' : platform.includes('win') ? 'Windows'
       : platform.includes('linux') ? 'Linux' : d.platform || '未知系统';
-    const avatar = platformLabel === 'Windows' ? '▦' : platformLabel === 'Linux' ? '⌘' : '◈';
+    // 平台统一使用简洁文字标记，避免不一致的 Unicode 图标造成视觉噪声。
+    const avatar = platformLabel === 'Windows' ? 'WIN' : platformLabel === 'Linux' ? 'LIN' : platformLabel === 'macOS' ? 'MAC' : 'PC';
     return h('article', { class: 'device-tile' },
       h('div', { class: 'device-top' }, h('div', { class: 'device-avatar', 'aria-hidden': 'true' }, avatar),
         h('span', { class: 'pill ' + (online ? 'ok' : '') },
