@@ -47,7 +47,7 @@ function showLogin(enrolled = true) {
 }
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault(); const msg = $('#login-msg'); msg.textContent = '';
-  try { const r = await api('/login', { body: { code: $('#code').value.trim() } }); csrf = r.csrf; showApp(); }
+  try { const r = await api('/login', { body: { code: $('#code').value.trim(), remember: $('#remember-login').checked } }); csrf = r.csrf; showApp(); }
   catch (err) {
     msg.textContent = err.status === 429 ? `验证次数过多，请在 ${Math.ceil((err.data.retry_after || 60) / 60)} 分钟后重试。`
       : err.status === 401 ? '验证码无效或已使用，请输入新的验证码。'
@@ -55,6 +55,21 @@ $('#login-form').addEventListener('submit', async (e) => {
     $('#code').value = '';
   }
 });
+$('#google-login-link').addEventListener('click', (event) => {
+  // 登录状态的有效期只能由服务端签发，前端仅传递用户选择。
+  event.currentTarget.href = '/admin/auth/google/start?remember=' + ($('#remember-login').checked ? '1' : '0');
+});
+const googleError = new URLSearchParams(location.search).get('google_error');
+if (googleError) {
+  history.replaceState(null, '', '/admin/');
+  const msg = $('#login-msg');
+  msg.textContent = ({
+    access_denied: '此 Google 账号未获得后台访问权限。',
+    invalid_state: '授权状态已失效，请重新登录。',
+    authentication_failed: 'Google 身份验证失败，请重试。',
+    not_configured: '尚未配置 Google 登录。',
+  })[googleError] || 'Google 登录未完成。';
+}
 $('#logout').addEventListener('click', async () => { try { await api('/logout', { body: {} }); } catch {} showLogin(); });
 
 /**
@@ -282,5 +297,5 @@ async function renderPairing() {
 
 // ---- boot ----
 (async () => {
-  try { const s = await api('/session'); if (s.authenticated) { csrf = s.csrf; showApp(); } else showLogin(s.enrolled); } catch { showLogin(); }
+  try { const s = await api('/session'); if (s.authenticated) { csrf = s.csrf; showApp(); } else { showLogin(s.enrolled); $('#google-login-box').hidden = !s.google_enabled; } } catch { showLogin(); }
 })();
