@@ -1,5 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cleanupResources } from './fixtures/resource-cleanup.js';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
@@ -8,7 +9,7 @@ import { WebSocketServer } from 'ws';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rmcp-res-'));
 const procs = [], servers = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-after(() => { procs.forEach((p) => p.kill()); servers.forEach((s) => s.close?.()); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { await cleanupResources({ directory: tmp, processes: procs, servers }); });
 
 function agent(port) {
   const cfg = path.join(tmp, `a${port}.json`);

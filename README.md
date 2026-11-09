@@ -1,4 +1,4 @@
-# kejishu RemoteOps
+# RemoteOps
 
 基于 MCP 的**自托管多设备远程运维中心**，提供统一的 ChatGPT / MCP 接入入口，支持 macOS、Windows、Linux。服务端自行持有设备注册信息和审计记录；设备主动建立出站 WebSocket，不要求在工作站上开放入站端口。
 
@@ -11,16 +11,15 @@ ChatGPT / MCP 客户端
        |
        | HTTPS + OAuth2 /mcp
        v
-RemoteOps Gateway (VPS, 127.0.0.1:8765)
+RemoteOps Gateway（通用 Linux / macOS 主机或容器）
        |
-       | Tailscale Funnel / 自有 HTTPS 反向代理
-       | WSS /device + 独立设备密钥
-       +----- macbook  (LaunchAgent, 用户权限)
-       +----- macmini  (LaunchAgent, 用户权限)
-       +----- windows  (计划任务, 指定账户权限)
-       +----- vps      (独立 systemd 低权限账户)
+       | HTTPS 反向代理或可用的安全公网入口
+       | WSS /device + 每台设备独立密钥
+       +----- macOS Agent  (launchd，普通用户)
+       +----- Windows Agent（计划任务，指定用户）
+       +----- Linux Agent  (systemd，非特权用户)
                     |
-                MCP stdio / Desktop Commander 0.3.1
+                MCP stdio / 本地工具服务
 ```
 
 ## 要求
@@ -39,7 +38,7 @@ npm test
 bash scripts/bootstrap-macos.sh --check
 # 首次配对：在 Gateway 上运行 node gateway/admin.js pair
 # 设备端执行：
-# node agent/agent.js pair https://gateway.example.com --device-id macbook
+# node agent/agent.js pair https://gateway.example.com --device-id example-macos
 bash scripts/bootstrap-macos.sh --apply
 ```
 
@@ -55,6 +54,12 @@ bash scripts/bootstrap-macos.sh --apply
 ## ChatGPT 接入
 
 在 ChatGPT 中新建自定义 MCP 服务，URL 为 `https://gateway.example.com/mcp`，身份验证选择 OAuth。Gateway 将提供 `/.well-known/oauth-authorization-server`、`/authorize`、`/token` 和动态客户端注册。OAuth 授权通过 Gateway 的 Owner Token 审批；**不得把 Owner Token 写入任何聊天、公开仓库或日志**。
+
+## 管理控制台
+
+打开 Gateway 的 HTTPS 地址下的 /admin/，完成双因素认证后访问运行总览、设备管理、使用量统计、认证信息、ChatGPT 自定义连接展示、操作审计、设备配对及系统设置。
+
+后台展示数据通过登录后的 API 动态加载。默认界面、测试和文档只使用通用示例，不包含部署者的设备清单、主机名称、私有路径或实际凭据。界面支持电脑与手机布局、浅色/深色/跟随系统主题，且不引入额外前端构建依赖。详见 [控制台功能及兼容性](docs/CONSOLE.md)。
 
 ## 工具能力
 

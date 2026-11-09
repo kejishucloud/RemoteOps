@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cleanupResources } from './fixtures/resource-cleanup.js';
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,6 +9,12 @@ import { totp } from '../gateway/totp.js';
 const PORT = 18768, BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rmcp-web-'));
 const dbPath = path.join(tmp, 'g.db'); const env = { ...process.env, RMCP_DB: dbPath };
+const dbConnections = new Set();
+const openTestDb = () => {
+  const connection = new DatabaseSync(dbPath);
+  dbConnections.add(connection);
+  return connection;
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let gw, owner, secret, cookie, csrf, lastCode;
 const form = (p, body) => fetch(BASE + p, { method: 'POST', redirect: 'manual', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) });
@@ -24,7 +31,7 @@ before(async () => {
   gw = spawn('node', ['gateway/server.js', '--port', String(PORT), '--db', dbPath], { stdio: 'pipe' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch {} await sleep(100); }
 });
-after(() => { gw.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { await cleanupResources({ directory: tmp, processes: [gw], databases: dbConnections }); });
 
 test('static UI is served with a strict CSP and no inline script', async () => {
   const r = await fetch(`${BASE}/admin/`); const html = await r.text();
@@ -76,7 +83,7 @@ test('devices: list, revoke via UI api', async () => {
 
 test('clients and audit endpoints', async () => {
   const c = await j('/clients'); assert.ok(c.body.static.find((x) => x.client_id === 'owner' && x.is_admin === 1));
-  new DatabaseSync(dbPath).prepare("INSERT INTO audit_logs (timestamp,client_id,device_id,tool,duration_ms,status) VALUES (datetime('now'),'x','d','read_file',5,'success')").run();
+  openTestDb().prepare("INSERT INTO audit_logs (timestamp,client_id,device_id,tool,duration_ms,status) VALUES (datetime('now'),'x','d','read_file',5,'success')").run();
   const a = await j('/audit?tool=read'); assert.equal(a.body.length, 1); assert.equal(a.body[0].tool, 'read_file');
   assert.equal((await j("/audit?client=' OR 1=1 --")).body.length, 0, 'filters are parameterised');
 });

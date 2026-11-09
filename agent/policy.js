@@ -21,7 +21,7 @@ const WRITE_TOOLS = new Set(['write_file', 'write_pdf', 'edit_block', 'create_di
 const PATH_KEYS = /^(path|paths|file_path|filepath|source|destination|dest|directory|dir|cwd|working_directory|output_path|outputpath)$/i;
 const CASE = process.platform === 'linux' ? (s) => s : (s) => s.toLowerCase();
 
-const expand = (p) => (p === '~' ? home : p.startsWith('~/') ? path.join(home, p.slice(2)) : p);
+const expand = (p) => (p === '~' ? home : (p.startsWith('~/') || p.startsWith('~\\')) ? path.join(home, p.slice(2)) : p);
 function real(p) {
   // realpath of the deepest existing ancestor + remaining tail, so not-yet-existing targets still resolve
   let abs = path.resolve(home, expand(p)), tail = '';
@@ -76,10 +76,17 @@ export function check(policy, tool, args = {}) {
     const m = policy.cmdRe.exec(cmd); if (m) return `command contains blocked program "${m[2]}"`;
     const pat = policy.patterns.find((re) => re.test(cmd)); if (pat) return 'command matches a blocked pattern';
     // blocked locations mentioned textually (also $HOME / ~ forms)
-    const text = cmd.replace(/\$\{?HOME\}?/g, home).replace(/(^|[\s'"=:])~(?=\/|\s|$|'|")/g, `$1${home}`);
+    const text = cmd
+      .replace(/\$\{?HOME\}?/g, home)
+      .replace(/%USERPROFILE%/gi, home)
+      .replace(/\$env:USERPROFILE/gi, home)
+      .replace(/(^|[\s'"=:])~(?=[\\/]|\s|$|'|")/g, `$1${home}`);
+    // Shell commands accept mixed slash separators on Windows: normalize
+    // only for comparison, never rewrite a command about to execute.
+    const normalized = CASE(text.replace(/[\\/]/g, path.sep));
     for (const b of policy.blockedReal) {
-      const plain = b.abs;
-      if (CASE(text).includes(plain) || CASE(text).includes(CASE(path.join(home, path.relative(home, plain))))) return `command references blocked location ${b.raw}`;
+      if (normalized.includes(CASE(b.abs.replace(/[\\/]/g, path.sep))))
+        return `command references blocked location ${b.raw}`;
     }
   }
   return null;

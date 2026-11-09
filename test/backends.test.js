@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cleanupResources } from './fixtures/resource-cleanup.js';
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,6 +11,12 @@ const PORT = 18769, BASE = `http://127.0.0.1:${PORT}`;
 const FIXTURE = path.resolve('test/fixtures/mock-mcp.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rmcp-be-'));
 const dbPath = path.join(tmp, 'g.db'); const env = { ...process.env, RMCP_DB: dbPath };
+const dbConnections = new Set();
+const openTestDb = () => {
+  const connection = new DatabaseSync(dbPath);
+  dbConnections.add(connection);
+  return connection;
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const procs = []; let owner, clientTok, cookie, csrf, secret, bxSecret;
 
@@ -68,7 +75,7 @@ before(async () => {
   startAgent('bx', s1, { allow_custom_backends: true }); startAgent('by', s2, null);
   await until(async () => (await api('/devices')).body.filter((d) => d.status === 'online').length === 2);
 });
-after(() => { procs.forEach((p) => p.kill()); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { await cleanupResources({ directory: tmp, processes: procs, databases: dbConnections }); });
 
 test('device page data: built-in server, catalog, custom flag follows the device', async () => {
   const bx = (await api('/devices/bx/backends')).body, by = (await api('/devices/by/backends')).body;
@@ -100,7 +107,7 @@ test('add custom server from the console → starts, tools appear prefixed, call
 test('device policy applies to tools of added servers; denial reason is audited', async () => {
   const r = await mcp('tools/call', { name: 'mock_srv_read_path', arguments: { path: '~/.ssh/id_rsa' } });
   assert.equal(r.structuredContent.error.code, 'POLICY_DENIED');
-  const all = new DatabaseSync(dbPath).prepare('SELECT tool,status,error_code,error_detail FROM audit_logs ORDER BY id DESC LIMIT 6').all(); const row = new DatabaseSync(dbPath).prepare("SELECT error_detail FROM audit_logs WHERE tool='mock_srv_read_path' AND status='error'").get();
+  const all = openTestDb().prepare('SELECT tool,status,error_code,error_detail FROM audit_logs ORDER BY id DESC LIMIT 6').all(); const row = openTestDb().prepare("SELECT error_detail FROM audit_logs WHERE tool='mock_srv_read_path' AND status='error'").get();
   assert.match(row.error_detail, /\.ssh/); assert.ok(!/Blocked by device policy/.test(row.error_detail));
   const ap = await api('/audit?tool=read_path'); assert.equal(ap.body[0].error_detail, row.error_detail, 'underscore in the filter must match literally');
   assert.equal((await api('/audit?tool=read%25path')).body.length, 0, '% is not a wildcard');
@@ -143,7 +150,7 @@ test('a server that fails to start reports an error instead of hanging', async (
   assert.match(sv.error, /not found on this device/, 'a missing command explains itself instead of a bare ENOENT');
 });
 
-test('commands installed outside the service PATH are found via extra_path (e.g. npm -g in ~/.npm-global/bin)', async () => {
+test('commands installed outside the service PATH are found via extra_path (e.g. npm -g in ~/.npm-global/bin)', { skip: process.platform === 'win32' ? 'POSIX shell fixture is unavailable on Windows; see the native Windows coverage below' : false }, async () => {
   const bin = path.join(tmp, 'userbin'); fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'my-mcp-tool'), `#!/bin/sh\nexec node "${FIXTURE}"\n`, { mode: 0o755 });
   const s = grab(admin('device-create', 'bp'), 'device_secret');
@@ -156,6 +163,32 @@ test('commands installed outside the service PATH are found via extra_path (e.g.
   startAgent('bp', s, { allow_custom_backends: true }, { extra_path: [bin] }); // 2) with it, the same stored config now starts
   assert.equal((await until(async () => { const x = (await api('/devices/bp/backends')).body.servers.find((q) => q.name === 'user-tool'); return x?.status === 'running' && x; })).tools.length, 3);
 });
+
+test('Windows extra_path can discover a native executable outside the service PATH',
+  { skip: process.platform !== 'win32' ? 'Windows-only executable fixture' : false }, async () => {
+    const bin = path.join(tmp, 'win-userbin');
+    fs.mkdirSync(bin, { recursive: true });
+    // 使用当前 Node 可执行文件，避免 POSIX shebang/.sh 对 Windows 的兼容性假设。
+    fs.copyFileSync(process.execPath, path.join(bin, 'test-node.exe'));
+    const secret = grab(admin('device-create', 'bwin'), 'device_secret');
+    startAgent('bwin', secret, { allow_custom_backends: true }, {});
+    await until(async () => (await api('/devices')).body.find((d) => d.device_id === 'bwin')?.status === 'online');
+    await api('/devices/bwin/backends', { template: 'custom', name: 'win-tool',
+      params: { command: 'test-node.exe', args: [FIXTURE] } });
+    const missing = await until(async () => {
+      const found = (await api('/devices/bwin/backends')).body.servers.find((x) => x.name === 'win-tool');
+      return found?.status === 'error' && found;
+    });
+    assert.match(missing.error, /not found/i);
+    procs[procs.findIndex((p) => p.spawnargs.some((a) => a.endsWith('bwin.json')))].kill();
+    await until(async () => (await api('/devices')).body.find((d) => d.device_id === 'bwin')?.status === 'offline');
+    startAgent('bwin', secret, { allow_custom_backends: true }, { extra_path: [bin] });
+    const running = await until(async () => {
+      const found = (await api('/devices/bwin/backends')).body.servers.find((x) => x.name === 'win-tool');
+      return found?.status === 'running' && found;
+    });
+    assert.equal(running.tools.length, 3);
+  });
 
 test('stable mode: tools/list never changes, add-on servers are reached with tools_list + tool_call', async () => {
   const listStable = async () => (await mcp('tools/list', {}, null)).tools.map((t) => t.name).sort();
@@ -190,7 +223,7 @@ test('tool_call: policy and routing still apply, errors are explicit, audit name
   assert.equal((await mcp('tools/call', { name: 'tool_call', arguments: { name: 'devices_list' } }, null)).structuredContent.error.code, 'INVALID_ARGUMENT', 'no recursion into meta tools');
   assert.equal((await mcp('tools/call', { name: 'tool_call', arguments: {} }, null)).structuredContent.error.code, 'INVALID_ARGUMENT');
   assert.equal((await mcp('tools/call', { name: 'tool_call', arguments: { name: 'nope_tool' } }, null)).structuredContent.error.code, 'UNKNOWN_TOOL');
-  const db = new DatabaseSync(dbPath);
+  const db = openTestDb();
   assert.ok(db.prepare("SELECT 1 FROM audit_logs WHERE tool='mock_srv_ping2' AND status='success'").get(), 'wrapped call is audited as the inner tool');
   assert.equal(db.prepare("SELECT COUNT(*) n FROM audit_logs WHERE tool='tool_call' AND status='success'").get().n, 0, 'a successful wrapper call never appears as tool_call');
   const d = db.prepare("SELECT error_detail FROM audit_logs WHERE tool='mock_srv_read_path' AND error_code='POLICY_DENIED' ORDER BY id DESC LIMIT 1").get();

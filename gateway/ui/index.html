@@ -1,39 +1,71 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Remote MCP</title>
+<meta name="description" content="RemoteOps 自托管远程设备与 MCP 连接管理控制台">
+<title>RemoteOps · 管理控制台</title>
 <link rel="stylesheet" href="/admin/style.css">
 </head>
 <body>
-<header class="bar"><strong>Remote MCP</strong><span id="who" class="muted"></span><button id="logout" class="ghost" hidden>Sign out</button></header>
-
-<main id="login" class="card narrow" hidden>
-  <h1>Sign in</h1>
+<header class="bar">
+  <div class="brand"><span class="brand-icon" aria-hidden="true">R</span><span><strong id="brand-name">RemoteOps</strong><small>CONTROL CENTER</small></span></div>
+  <span id="who" class="muted">Self-hosted · MCP Gateway</span>
+  <span class="header-security" aria-label="安全认证已启用"><span class="dot on"></span>私有管理空间</span>
+  <button id="logout" class="ghost" hidden>退出登录</button>
+</header>
+<main id="login" class="card narrow login-card" hidden>
+  <div class="login-visual"><span class="brand-icon large">R</span></div>
+  <p class="eyebrow">SECURE ACCESS</p>
+  <h1>欢迎回来</h1>
+  <p class="muted">使用身份验证器中的六位动态验证码进入 RemoteOps 控制台。</p>
   <form id="login-form" autocomplete="off">
-    <label for="code">6-digit code from your authenticator</label>
-    <input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" required>
-    <button type="submit">Sign in</button>
+    <label for="code">双因素认证（TOTP）验证码</label>
+    <input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
+    <button type="submit" class="full-button">安全登录</button>
     <p id="login-msg" class="msg" role="alert"></p>
   </form>
-  <p id="enroll" class="muted" hidden>Two-step login is not set up yet. <a href="/admin/setup">Set it up</a>.</p>
+  <p id="enroll" class="muted" hidden>尚未启用动态验证码。<a href="/admin/setup">配置双因素认证</a></p>
 </main>
-
-<div id="app" hidden>
-  <nav class="tabs" role="tablist">
-    <button data-tab="devices" class="active">Devices</button>
-    <button data-tab="clients">Clients</button>
-    <button data-tab="audit">Activity</button>
-    <button data-tab="pairing">Pairing</button>
-  </nav>
-  <p id="toast" class="toast" role="status" hidden></p>
-  <section id="tab-devices"></section>
-  <section id="tab-clients" hidden></section>
-  <section id="tab-audit" hidden></section>
-  <section id="tab-pairing" hidden></section>
+<div id="app" class="workspace" hidden>
+  <aside class="sidebar" aria-label="管理导航">
+    <div class="nav-label">工作空间</div>
+    <nav class="tabs" aria-label="主导航">
+      <button type="button" data-tab="overview" class="active"><span class="nav-icon">▦</span> 总览</button>
+      <button type="button" data-tab="devices"><span class="nav-icon">▣</span> 设备管理</button>
+      <button type="button" data-tab="usage"><span class="nav-icon">▥</span> 使用量统计</button>
+      <button type="button" data-tab="clients"><span class="nav-icon">◈</span> 认证信息</button>
+      <button type="button" data-tab="chatgpt"><span class="nav-icon">✳</span> ChatGPT 插件</button>
+      <div class="nav-label sub-label">系统管理</div>
+      <button type="button" data-tab="audit"><span class="nav-icon">≡</span> 操作审计</button>
+      <button type="button" data-tab="pairing"><span class="nav-icon">⊕</span> 设备配对</button>
+      <button type="button" data-tab="settings"><span class="nav-icon">⚙</span> 系统设置</button>
+    </nav>
+    <div class="side-footer">
+      <span class="status-marker"><span class="dot on"></span>安全连接已启用</span>
+      <p>远程运维 · 自托管部署</p>
+      <small>RemoteOps Console v0.2</small>
+    </div>
+  </aside>
+  <main class="main-area">
+    <div class="page-top">
+      <div><p class="eyebrow">REMOTEOPS / WORKSPACE</p><h1 id="page-title">运行总览</h1><p id="page-subtitle" class="muted">统一查看设备状态、连接与工具调用情况。</p></div>
+      <div class="top-actions"><span class="live-indicator"><span class="dot on"></span> 实时设备状态</span><button type="button" id="refresh" class="ghost">↻ 刷新</button></div>
+    </div>
+    <p id="toast" class="toast" role="status" hidden></p>
+    <section id="tab-overview"></section>
+    <section id="tab-devices" hidden></section>
+    <section id="tab-usage" hidden></section>
+    <section id="tab-clients" hidden></section>
+    <section id="tab-chatgpt" hidden></section>
+    <section id="tab-audit" hidden></section>
+    <section id="tab-pairing" hidden></section>
+    <section id="tab-settings" hidden></section>
+    <footer class="main-footer">RemoteOps · 所有控制操作均由私有网关执行，不向前端暴露认证密钥。</footer>
+  </main>
 </div>
+<script src="/admin/console-views.js"></script>
 <script src="/admin/app.js"></script>
 </body>
 </html>
