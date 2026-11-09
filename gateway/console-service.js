@@ -5,7 +5,7 @@
 const DAY_MS = 86400000;
 const DEFAULTS = Object.freeze({
   console_name: 'RemoteOps',
-  ui_theme: 'system',
+  ui_theme: 'light',
   ui_refresh_seconds: 15,
   usage_period_days: 7,
   plugin_name: 'RemoteOps MCP',

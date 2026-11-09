@@ -22,7 +22,6 @@ function numberLabel(value) {
  */
 function metricCard(label, value, hint, symbol = '◈') {
   return h('div', { class: 'kpi' },
-    h('span', { class: 'kpi-icon', 'aria-hidden': 'true' }, symbol),
     h('div', { class: 'kpi-label' }, label),
     h('div', { class: 'kpi-value' }, String(value)),
     h('div', { class: 'kpi-foot' }, hint));
@@ -78,10 +77,11 @@ function trendChart(trend) {
   }
   const max = Math.max(1, ...series.map((item) => item.calls));
   const bars = series.map((item) => {
-    const height = item.calls ? Math.max(3, Math.round(item.calls / max * 100)) : 2;
+    // 固定像素高度，避免百分比高度在嵌套 Flex 布局中退化为最小高度。
+    const height = item.calls ? Math.max(4, Math.round(item.calls / max * 144)) : 2;
     return h('div', { class: 'chart-col',
       title: item.start + (item.start === item.end ? '' : ' 至 ' + item.end) + '：' + item.calls + ' 次调用' },
-      h('div', { class: 'chart-bar', style: 'height:' + height + '%;opacity:' + (item.calls ? '1' : '.22') }));
+      h('div', { class: 'chart-bar', style: 'height:' + height + 'px;opacity:' + (item.calls ? '1' : '.22') }));
   });
   return h('div', {},
     h('div', { class: 'bar-chart', role: 'img', 'aria-label': '工具调用趋势图' }, ...bars),

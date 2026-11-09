@@ -114,7 +114,7 @@ test('控制台 HTTP API：鉴权、CSRF、统计、重命名与设置修改', a
     assert.equal(overview.json.usage.calls, 1);
     assert.equal((await request('/overview?days=42', auth)).code, 400);
     assert.equal((await request('/credentials', auth)).json.totp_enabled, true);
-    assert.equal((await request('/settings', auth)).json.ui_theme, 'system');
+    assert.equal((await request('/settings', auth)).json.ui_theme, 'light');
     assert.equal((await request('/settings', { ...auth, body: { ui_theme: 'dark' } })).json.ui_theme, 'dark');
     assert.equal((await request('/settings', { cookie, body: { ui_theme: 'light' } })).code, 403);
     assert.equal((await request('/settings', { ...auth, body: { hidden_secret: 'any' } })).code, 400);
