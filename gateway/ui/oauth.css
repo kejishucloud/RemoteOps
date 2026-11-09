@@ -1,0 +1,63 @@
+/**
+ * RemoteOps OAuth 授权界面，复用 UI v3 色彩与组件变量。
+ * 单独的同源样式文件，保证授权页面符合严格 CSP，不依赖第三方字体或脚本。
+ */
+.oauth-shell .bar { position:relative; top:auto; }
+.oauth-page { min-height:calc(100svh - 62px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 18px 24px; }
+.oauth-main { width:100%; max-width:515px; }
+.oauth-card { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:29px 33px 30px; box-shadow:0 3px 18px rgba(16,24,40,.025); }
+.oauth-caption { color:var(--muted); font-size:11px; font-weight:660; letter-spacing:.2px; margin:0 0 14px; }
+.oauth-heading { font-size:24px; font-weight:710; letter-spacing:-.45px; line-height:1.35; margin:0 0 10px; }
+.oauth-lead { color:var(--muted); font-size:13px; line-height:1.85; margin:0 0 22px; }
+.oauth-apps { display:flex; align-items:center; justify-content:center; gap:21px; margin-bottom:24px; }
+.oauth-app-mark { width:48px; height:48px; display:grid; place-items:center; border:1px solid var(--line-strong); border-radius:11px; background:var(--hover); color:var(--fg); font-size:19px; font-weight:760; }
+.oauth-app-block:first-child .oauth-app-mark { color:#fff; background:#273344; border-color:#273344; }
+.oauth-connection { display:inline-flex; align-items:center; justify-content:center; width:41px; height:22px; flex:none; }
+.oauth-connection::before { content:''; display:block; width:31px; border-top:1px dashed var(--line-strong); }
+.oauth-app-name { display:block; max-width:100%; overflow-wrap:anywhere; color:var(--fg); font-size:13px; font-weight:710; }
+.oauth-app-block { min-width:0; text-align:center; }
+.oauth-app-label { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+.oauth-client-panel { padding:15px 17px; border:1px solid var(--line); border-radius:8px; margin-bottom:16px; background:var(--bg); }
+.oauth-panel-title { font-size:11px; font-weight:680; color:var(--muted); letter-spacing:.25px; margin:0 0 10px; }
+.oauth-client-name { font-size:14px; font-weight:710; color:var(--fg); line-height:1.6; margin:0 0 5px; overflow-wrap:anywhere; }
+.oauth-permissions { padding:0; margin:0; list-style:none; display:grid; gap:11px; }
+.oauth-permissions li { display:flex; align-items:flex-start; gap:10px; font-size:12px; line-height:1.65; color:var(--fg); }
+.oauth-permissions .permission-icon { display:grid; place-items:center; flex:none; width:19px; height:19px; border-radius:6px; background:var(--card); border:1px solid var(--line); font-size:10px; font-weight:800; color:var(--muted); }
+.oauth-redirect { margin:0 0 20px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; display:grid; gap:5px; }
+.oauth-redirect-title { font-size:11px; color:var(--muted); font-weight:620; }
+.oauth-redirect code { font-size:11px; line-height:1.6; white-space:normal; overflow-wrap:anywhere; }
+.oauth-token-label { display:block; font-size:12px; margin-bottom:8px; font-weight:650; }
+.oauth-token-input { height:44px; padding:10px 12px; }
+.oauth-helper { margin:8px 0 19px; font-size:11px; color:var(--muted); line-height:1.65; }
+.oauth-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; }
+.oauth-actions button { width:100%; min-height:42px; }
+.oauth-actions .oauth-approve { order:2; }
+.oauth-actions .oauth-deny { order:1; }
+.oauth-alert { padding:10px 13px; margin:0 0 18px; border:1px solid color-mix(in srgb,var(--bad) 24%,var(--line)); border-radius:7px; background:color-mix(in srgb,var(--bad) 4%,var(--card)); color:var(--bad); font-size:12px; line-height:1.6; }
+.oauth-footnote { color:var(--muted); font-size:11px; line-height:1.65; margin:18px 0 0; }
+.oauth-footnote strong { color:var(--fg); }
+.oauth-footer { max-width:515px; width:100%; margin:16px auto 0; display:flex; align-items:center; justify-content:center; gap:6px; text-align:center; color:var(--muted); font-size:11px; }
+.oauth-footer svg { width:14px; height:14px; flex:none; stroke:currentColor; fill:none; stroke-width:1.5; }
+.oauth-state-icon { display:grid; place-items:center; width:46px; height:46px; margin:0 auto 18px; border:1px solid var(--line); border-radius:12px; background:var(--hover); color:var(--ok); font-size:23px; font-weight:700; }
+.oauth-state-icon.denied { color:var(--muted); }
+.oauth-state-icon.error { color:var(--bad); }
+.oauth-result { text-align:center; }
+.oauth-result .oauth-heading { margin-bottom:10px; }
+.oauth-result .oauth-lead { margin-bottom:22px; }
+.oauth-result .btn { display:flex; justify-content:center; align-items:center; min-height:43px; padding:11px 14px; text-decoration:none; border-radius:7px; background:var(--accent); color:var(--accent-contrast); font-size:13px; font-weight:660; overflow-wrap:anywhere; }
+.oauth-result .btn:hover { opacity:.88; }
+.oauth-error-message { white-space:pre-line; overflow-wrap:anywhere; color:var(--muted); font-size:12px; }
+@media(max-width:480px) {
+  .oauth-page { min-height:calc(100svh - 58px); padding:20px 14px 24px; }
+  .oauth-card { padding:25px 22px 24px; }
+  .oauth-heading { font-size:22px; }
+  .oauth-apps { gap:15px; }
+  .oauth-actions { gap:8px; }
+}
+@media(max-width:360px) {
+  .oauth-card { padding:22px 17px; }
+  .oauth-app-mark { width:42px; height:42px; }
+  .oauth-actions { grid-template-columns:1fr; }
+  .oauth-actions .oauth-approve { order:1; }
+  .oauth-actions .oauth-deny { order:2; }
+}

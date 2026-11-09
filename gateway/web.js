@@ -12,7 +12,7 @@ import { CATALOG, NAME_RE } from '../agent/backends.js';
 import { ConsoleService } from './console-service.js';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
-const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
+const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/i18n.js': ['i18n.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/oauth.css': ['oauth.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
 const IDLE_MS = 30 * 60_000, MAX_MS = 12 * 3600_000, LOCK_WINDOW = 15 * 60_000, LOCK_AFTER = 5;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
