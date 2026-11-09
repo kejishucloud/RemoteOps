@@ -9,7 +9,7 @@ let usageDays = 7;
 
 /** 数字格式化。@param {number} value 原值 @returns {string} 本地格式化值 */
 function numberLabel(value) {
-  return new Intl.NumberFormat('zh-CN').format(Number(value) || 0);
+  return new Intl.NumberFormat(globalThis.RemoteOpsI18n?.getLocale() || 'zh-CN').format(Number(value) || 0);
 }
 
 /**
@@ -44,7 +44,7 @@ function applyPreferences(settings) {
   usageDays = settings.usage_period_days;
   document.documentElement.dataset.theme = settings.ui_theme;
   $('#brand-name').textContent = settings.console_name;
-  document.title = settings.console_name + ' · 管理控制台';
+  document.title = settings.console_name + (globalThis.RemoteOpsI18n?.getLocale() === 'en-US' ? ' · Admin Console' : ' · 管理控制台');
   if (!$('#app').hidden) {
     clearInterval(timer);
     timer = setInterval(() => {
