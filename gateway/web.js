@@ -33,7 +33,9 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
   const sendJson = (res, code, body, extra = {}) => { res.writeHead(code, { ...baseHeaders(), 'content-type': 'application/json', ...extra }); res.end(JSON.stringify(body)); };
   const sendHtml = (res, code, body) => {
     res.writeHead(code, { ...baseHeaders(), 'content-type': 'text/html; charset=utf-8' });
-    res.end(`<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Remote MCP setup</title><link rel=stylesheet href=/admin/style.css><main class=card>${body}</main>`);
+    res.end(`<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>RemoteOps · 管理员验证设置</title><link rel="stylesheet" href="/admin/style.css"></head><body>
+<header class="bar"><a class="brand" href="/admin/"><span class="brand-icon" aria-hidden="true">R<span class="brand-slash">/</span></span><span class="brand-name"><strong>RemoteOps</strong><small>管理控制台</small></span></a><span class="bar-spacer"></span><span class="header-security">安全初始化</span></header>
+<div class="auth-page"><main class="auth-container setup-frame">${body}</main><footer class="auth-footer">管理员身份验证由自托管 Gateway 完成</footer></div></body></html>`);
   };
   const body = async (req, limit = 8192) => {
     let n = 0; const c = [];
@@ -59,32 +61,31 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
 
   // ---- setup (only while no TOTP is active) ----
   async function setup(req, res, p) {
-    if (get('totp_secret')) return sendHtml(res, 404, '<h1>Not found</h1>'), true;
+    if (get('totp_secret')) return sendHtml(res, 404, '<span class=auth-step>安全验证已配置</span><h1>页面不可用</h1><p>管理员验证已经完成设置，请返回控制台登录。</p><p><a href=/admin/>返回控制台</a></p>'), true;
     const form = req.method === 'POST' ? Object.fromEntries(new URLSearchParams(await body(req))) : {};
     const page = (inner) => sendHtml(res, 200, inner);
     if (p === '/admin/setup' && req.method === 'GET')
-      return page(`<h1>Enable two-step login</h1><p>Enter the <b>owner token</b> to start. It is on the gateway host in <code>secrets/owner-token</code>.</p>
-<form method=post action=/admin/setup><input type=password name=owner_token autocomplete=off autofocus placeholder="owner token"><button>Continue</button></form>`), true;
+      return page(`<span class=auth-step>步骤 01 / 02 · 验证管理员身份</span><h1>配置安全验证</h1><p>首次进入控制台需要绑定身份验证器。请先输入部署时生成的管理员 Owner Token。</p>
+<form method=post action=/admin/setup><label for=owner-token>管理员 Owner Token</label><input id=owner-token type=password name=owner_token autocomplete=off autofocus placeholder="输入管理员令牌" required><button type=submit>验证并继续 →</button></form><p class=setup-hint>Owner Token 保存在你的 Gateway 服务器中，请通过安全的管理通道获取，不要将令牌发送到聊天或公开仓库。</p>`), true;
     if (p === '/admin/setup' && req.method === 'POST') {
-      if (locked()) return sendHtml(res, 429, `<h1>Too many attempts</h1><p>Try again in ${lockRetry()} s.</p>`), true;
+      if (locked()) return sendHtml(res, 429, `<span class=auth-step>安全保护</span><h1>尝试次数过多</h1><p>请在 ${lockRetry()} 秒后重试。</p><p><a href=/admin/setup>返回验证页面</a></p>`), true;
       const ok = db.prepare('SELECT 1 FROM client_tokens WHERE token_hash=? AND is_admin=1 AND revoked_at IS NULL').get(sha256(form.owner_token || ''));
-      if (!ok) { fails.push(Date.now()); log('WARN', 'web setup: bad owner token'); return sendHtml(res, 401, '<h1>Invalid owner token</h1><p><a href=/admin/setup>Back</a></p>'), true; }
+      if (!ok) { fails.push(Date.now()); log('WARN', 'web setup: bad owner token'); return sendHtml(res, 401, '<span class=auth-step>管理员身份验证</span><h1>管理员令牌不正确</h1><p>请确认令牌来自当前 Gateway 的管理员凭据。</p><p><a href=/admin/setup>重新输入</a></p>'), true; }
       const secret = newTotpSecret(); set('totp_pending', secret);
       const svg = await QRCode.toString(otpauthUri(secret, 'admin', `Remote MCP (${host})`), { type: 'svg', margin: 2, errorCorrectionLevel: 'M' });
-      return page(`<h1>Scan with your authenticator</h1><p>Open an authenticator app (Google Authenticator, 1Password, Authy, …), add an account and scan:</p>
-<div class=qr>${svg}</div><p>Or enter this key manually:</p><p><code class=key>${esc(secret.match(/.{1,4}/g).join(' '))}</code></p>
-<p>Then type the 6-digit code it shows to turn two-step login on.</p>
-<form method=post action=/admin/setup/confirm><input name=code inputmode=numeric pattern="[0-9]{6}" maxlength=6 autocomplete=one-time-code placeholder="123456" autofocus><button>Enable</button></form>
-<p class=warn>This page shows the secret once. Do not screenshot it.</p>`), true;
+      return page(`<span class=auth-step>步骤 02 / 02 · 绑定身份验证器</span><h1>扫描二维码</h1><p>使用 Google Authenticator、1Password 或其他兼容 TOTP 的验证器扫描下方二维码。</p>
+<div class=qr>${svg}</div><p class=setup-hint>无法扫码？在验证器中手动输入以下密钥：</p><p><code class=key>${esc(secret.match(/.{1,4}/g).join(' '))}</code></p>
+<form method=post action=/admin/setup/confirm><label for=setup-code>六位动态验证码</label><input id=setup-code name=code inputmode=numeric pattern="[0-9]{6}" maxlength=6 autocomplete=one-time-code placeholder="000000" autofocus required><button type=submit>确认并启用双因素验证 →</button></form>
+<p class=setup-warning>密钥只会在本步骤显示。请勿截图、转发或保存到公开位置。</p>`), true;
     }
     if (p === '/admin/setup/confirm' && req.method === 'POST') {
-      if (locked()) return sendHtml(res, 429, `<h1>Too many attempts</h1><p>Try again in ${lockRetry()} s.</p>`), true;
+      if (locked()) return sendHtml(res, 429, `<span class=auth-step>安全保护</span><h1>尝试次数过多</h1><p>请在 ${lockRetry()} 秒后重试。</p><p><a href=/admin/setup>返回验证页面</a></p>`), true;
       const pending = get('totp_pending');
       const step = pending && verifyTotp(pending, form.code);
-      if (!step) { fails.push(Date.now()); return sendHtml(res, 400, '<h1>Code did not match</h1><p>Check the time on your phone, then <a href=/admin/setup>start again</a>.</p>'), true; }
+      if (!step) { fails.push(Date.now()); return sendHtml(res, 400, '<span class=auth-step>验证码验证</span><h1>验证码不正确</h1><p>请确认验证器与服务器时间同步，然后<a href=/admin/setup>重新开始设置</a>。</p>'), true; }
       set('totp_secret', pending); set('totp_last_step', step); del('totp_pending');
       log('INFO', 'web admin: two-step login enabled');
-      return sendHtml(res, 200, '<h1>Two-step login is on</h1><p>You can now sign in at <a href=/admin/>/admin/</a> with a code from your app.</p><p class=warn>Lost the phone? On the gateway host run <code>node gateway/admin.js totp-reset</code>.</p>'), true;
+      return sendHtml(res, 200, '<span class=auth-step>配置已完成</span><h1>管理员验证已启用</h1><p>现在可以使用身份验证器中的六位动态验证码登录控制台。</p><p><a class=primary-link href=/admin/>进入管理控制台 →</a></p><p class=setup-hint>请安全备份验证器账户。遗失设备后需通过 Gateway 的独立管理员通道执行恢复。</p>'), true;
     }
     return false;
   }

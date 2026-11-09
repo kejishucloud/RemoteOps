@@ -1,57 +1,103 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<meta name="description" content="RemoteOps 自托管远程设备与 MCP 连接管理控制台">
-<title>RemoteOps · 管理控制台</title>
-<link rel="stylesheet" href="/admin/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="RemoteOps · 自托管设备与 MCP 网关管理">
+  <title>RemoteOps · 管理控制台</title>
+  <link rel="stylesheet" href="/admin/style.css">
 </head>
 <body>
+<svg class="svg-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V12M10 20V5M16 20v-9M22 20v-6M2 20h22"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9 2 2-2 2m-4 0 2 2"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><circle cx="12" cy="4" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 6v6M12 12 6 17M12 12l6 5"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12M18.36 5.64l-2.12 2.12M7.76 16.24l-2.12 2.12"/><circle cx="12" cy="12" r="4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-5L3 9m0-6v6h6M4 13a8 8 0 0 0 14 5l3-3m0 6v-6h-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4.5 5v6c0 5 3.5 8.5 7.5 11 4-2.5 7.5-6 7.5-11V5L12 2Z"/><path d="m9 12 2 2 4-4"/></symbol>
+</svg>
+
 <header class="bar">
-  <div class="brand"><span class="brand-icon" aria-hidden="true">R</span><span><strong id="brand-name">RemoteOps</strong><small>CONTROL CENTER</small></span></div>
-  <span id="who" class="muted">Self-hosted · MCP Gateway</span>
-  <span class="header-security" aria-label="安全认证已启用"><span class="dot on"></span>私有管理空间</span>
-  <button id="logout" class="ghost" hidden>退出登录</button>
+  <a class="brand" href="/admin/" aria-label="RemoteOps 控制台首页">
+    <span class="brand-icon" aria-hidden="true">R<span class="brand-slash">/</span></span>
+    <span class="brand-name"><strong id="brand-name">RemoteOps</strong><small>管理控制台</small></span>
+  </a>
+  <span class="header-divider" aria-hidden="true"></span>
+  <span class="header-location">工作空间</span>
+  <div class="bar-spacer"></div>
+  <span id="who" class="header-context">自托管 MCP Gateway</span>
+  <span class="header-security"><span class="header-security-dot" aria-hidden="true"></span>私有部署</span>
+  <button id="logout" class="ghost header-logout" type="button" hidden>退出登录</button>
 </header>
-<main id="login" class="card narrow login-card" hidden>
-  <div class="login-visual"><span class="brand-icon large">R</span></div>
-  <p class="eyebrow">SECURE ACCESS</p>
-  <h1>欢迎回来</h1>
-  <p class="muted">使用身份验证器中的六位动态验证码进入 RemoteOps 控制台。</p>
-  <form id="login-form" autocomplete="off">
-    <label for="code">双因素认证（TOTP）验证码</label>
-    <input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
-    <button type="submit" class="full-button">安全登录</button>
-    <p id="login-msg" class="msg" role="alert"></p>
-  </form>
-  <p id="enroll" class="muted" hidden>尚未启用动态验证码。<a href="/admin/setup">配置双因素认证</a></p>
+
+<main id="login" class="auth-page" hidden>
+  <div class="auth-container">
+    <div class="auth-symbol"><svg class="auth-shield" aria-hidden="true"><use href="#i-shield"></use></svg></div>
+    <p class="auth-overline">管理员身份验证</p>
+    <h1 class="auth-title">登录 RemoteOps</h1>
+    <p class="auth-description">管理远程设备、MCP 连接与网关运行状态。</p>
+
+    <form id="login-form" class="auth-form" autocomplete="off">
+      <label for="code">身份验证器验证码</label>
+      <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="······" required>
+      <p class="auth-helper">输入身份验证器应用中的 6 位动态验证码。</p>
+      <button type="submit" class="full-button">登录控制台<svg class="button-arrow" aria-hidden="true"><use href="#i-arrow"></use></svg></button>
+      <p id="login-msg" class="msg" role="alert"></p>
+    </form>
+
+    <section id="enroll" class="enroll-panel" hidden>
+      <div class="enroll-notice">
+        <span class="enroll-notice-icon" aria-hidden="true">01</span>
+        <div>
+          <h2>开始使用前需要完成安全设置</h2>
+          <p>当前控制台尚未启用管理员身份验证。</p>
+        </div>
+      </div>
+      <p class="enroll-description">使用已有的管理员 Owner Token 完成验证器绑定。此操作不会修改设备凭据或 OAuth 连接。</p>
+      <a class="primary-link" href="/admin/setup">配置管理员验证<svg class="button-arrow" aria-hidden="true"><use href="#i-arrow"></use></svg></a>
+      <p class="enroll-footnote">只有持有管理员令牌的人员可以执行初始化。</p>
+    </section>
+  </div>
+  <footer class="auth-footer"><svg aria-hidden="true"><use href="#i-shield"></use></svg>身份验证由你部署的 Gateway 独立处理</footer>
 </main>
+
 <div id="app" class="workspace" hidden>
   <aside class="sidebar" aria-label="管理导航">
-    <div class="nav-label">工作空间</div>
+    <div class="nav-label">工作台</div>
     <nav class="tabs" aria-label="主导航">
-      <button type="button" data-tab="overview" class="active"><span class="nav-icon">▦</span> 总览</button>
-      <button type="button" data-tab="devices"><span class="nav-icon">▣</span> 设备管理</button>
-      <button type="button" data-tab="usage"><span class="nav-icon">▥</span> 使用量统计</button>
-      <button type="button" data-tab="clients"><span class="nav-icon">◈</span> 认证信息</button>
-      <button type="button" data-tab="chatgpt"><span class="nav-icon">✳</span> ChatGPT 插件</button>
-      <div class="nav-label sub-label">系统管理</div>
-      <button type="button" data-tab="audit"><span class="nav-icon">≡</span> 操作审计</button>
-      <button type="button" data-tab="pairing"><span class="nav-icon">⊕</span> 设备配对</button>
-      <button type="button" data-tab="settings"><span class="nav-icon">⚙</span> 系统设置</button>
+      <button type="button" data-tab="overview" class="active"><svg class="nav-icon"><use href="#i-grid"></use></svg><span>运行总览</span></button>
+      <button type="button" data-tab="devices"><svg class="nav-icon"><use href="#i-device"></use></svg><span>设备管理</span></button>
+      <button type="button" data-tab="usage"><svg class="nav-icon"><use href="#i-chart"></use></svg><span>使用量统计</span></button>
+      <button type="button" data-tab="clients"><svg class="nav-icon"><use href="#i-key"></use></svg><span>认证信息</span></button>
+      <button type="button" data-tab="chatgpt"><svg class="nav-icon"><use href="#i-network"></use></svg><span>ChatGPT 连接</span></button>
+      <div class="nav-label sub-label">管理</div>
+      <button type="button" data-tab="audit"><svg class="nav-icon"><use href="#i-log"></use></svg><span>操作审计</span></button>
+      <button type="button" data-tab="pairing"><svg class="nav-icon"><use href="#i-plus"></use></svg><span>设备配对</span></button>
+      <button type="button" data-tab="settings"><svg class="nav-icon"><use href="#i-settings"></use></svg><span>系统设置</span></button>
     </nav>
     <div class="side-footer">
-      <span class="status-marker"><span class="dot on"></span>安全连接已启用</span>
-      <p>远程运维 · 自托管部署</p>
-      <small>RemoteOps Console v0.2</small>
+      <div class="side-footer-title"><span class="dot on"></span>Gateway 已连接</div>
+      <p>RemoteOps · Self-hosted</p>
     </div>
   </aside>
+
   <main class="main-area">
     <div class="page-top">
-      <div><p class="eyebrow">REMOTEOPS / WORKSPACE</p><h1 id="page-title">运行总览</h1><p id="page-subtitle" class="muted">统一查看设备状态、连接与工具调用情况。</p></div>
-      <div class="top-actions"><span class="live-indicator"><span class="dot on"></span> 实时设备状态</span><button type="button" id="refresh" class="ghost">↻ 刷新</button></div>
+      <div>
+        <p class="page-breadcrumb">控制台 <span>/</span> <span id="page-location">运行总览</span></p>
+        <h1 id="page-title">运行总览</h1>
+        <p id="page-subtitle" class="muted">统一查看设备连接与工具调用情况。</p>
+      </div>
+      <div class="top-actions">
+        <span class="live-indicator"><span class="dot on"></span>网关运行中</span>
+        <button type="button" id="refresh" class="ghost refresh-button"><svg class="button-icon" aria-hidden="true"><use href="#i-refresh"></use></svg>刷新</button>
+      </div>
     </div>
     <p id="toast" class="toast" role="status" hidden></p>
     <section id="tab-overview"></section>
@@ -62,7 +108,7 @@
     <section id="tab-audit" hidden></section>
     <section id="tab-pairing" hidden></section>
     <section id="tab-settings" hidden></section>
-    <footer class="main-footer">RemoteOps · 所有控制操作均由私有网关执行，不向前端暴露认证密钥。</footer>
+    <footer class="main-footer">RemoteOps · 自托管运维管理平台</footer>
   </main>
 </div>
 <script src="/admin/console-views.js"></script>

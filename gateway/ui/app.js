@@ -6,7 +6,21 @@ let csrf = null, tab = 'overview', timer = null, detail = null;
 function h(tag, props, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {
-    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+    if (k === 'class') e.className = v;
+    else if (k === 'style') {
+      // 严格 CSP 禁止 setAttribute('style', ...)；只允许数字化的布局属性通过 CSSOM 更新。
+      // 动态值来自统计数据，做白名单校验，避免任意 CSS 注入。
+      for (const declaration of String(v).split(';')) {
+        const match = /^(height|width|opacity):((?:[0-9]+(?:\.[0-9]+)?)(?:px|%)?)$/.exec(declaration.trim());
+        if (!match) continue;
+        const [, property, value] = match;
+        if (property === 'opacity' && Number(value) > 1) continue;
+        if (property !== 'opacity' && !/(?:px|%)$/.test(value)) continue;
+        e.style.setProperty(property, value);
+      }
+    }
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
   }
   for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
   return e;
@@ -28,16 +42,16 @@ const confirmDo = async (msg, fn) => { if (!confirm(msg)) return; try { await fn
 
 // ---- login ----
 function showLogin(enrolled = true) {
-  clearInterval(timer); csrf = null; $('#app').hidden = true; $('#logout').hidden = true; $('#login').hidden = false;
+  clearInterval(timer); csrf = null; document.documentElement.dataset.theme = 'light'; $('#app').hidden = true; $('#logout').hidden = true; $('#login').hidden = false;
   $('#enroll').hidden = enrolled; $('#login-form').hidden = !enrolled; $('#code').value = ''; if (enrolled) $('#code').focus();
 }
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault(); const msg = $('#login-msg'); msg.textContent = '';
   try { const r = await api('/login', { body: { code: $('#code').value.trim() } }); csrf = r.csrf; showApp(); }
   catch (err) {
-    msg.textContent = err.status === 429 ? `Too many attempts. Try again in ${Math.ceil((err.data.retry_after || 60) / 60)} min.`
-      : err.status === 401 ? 'Code not accepted.'
-      : err.data?.error === 'bad origin' ? 'Blocked: open this page at the gateway\'s configured public URL.' : `Sign-in failed (${err.message}).`;
+    msg.textContent = err.status === 429 ? `验证次数过多，请在 ${Math.ceil((err.data.retry_after || 60) / 60)} 分钟后重试。`
+      : err.status === 401 ? '验证码无效或已使用，请输入新的验证码。'
+      : err.data?.error === 'bad origin' ? '访问地址不匹配，请使用网关配置的正式 HTTPS 地址。' : `登录失败：${err.message}`;
     $('#code').value = '';
   }
 });
@@ -89,6 +103,7 @@ function render() {
   for (const name of Object.keys(pageInfo)) $('#tab-' + name).hidden = name !== tab;
   const [title, subtitle] = pageInfo[tab];
   $('#page-title').textContent = title;
+  $('#page-location').textContent = title;
   $('#page-subtitle').textContent = subtitle;
   const routes = {
     overview: renderOverview, devices: renderDevices, usage: renderUsage,
