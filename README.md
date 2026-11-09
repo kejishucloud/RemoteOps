@@ -96,3 +96,7 @@ test/         单元与端到端测试
 ## Google 登录
 
 管理后台支持 Google OpenID Connect 管理员白名单登录，以及可选 30 天保持登录。配置、风险和测试说明见 [Google 登录文档](docs/GOOGLE_LOGIN.md)。
+
+## VPS 发布审计与恢复演练
+
+提供只读协议审计、cgroup 内存监控和 SQLite 在线备份/隔离恢复核验工具；操作指南参见 [可靠性运行手册](docs/OPS_RELIABILITY.md)。运行中的 Agent 权限受限，不应通过其自身重启 VPS Agent。
