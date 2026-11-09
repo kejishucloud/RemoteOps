@@ -112,7 +112,7 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
       if (!step) { fails.push(Date.now()); log('WARN', 'web login: bad code'); return sendJson(res, 401, { error: 'invalid code' }), true; }
       set('totp_last_step', step); fails.length = 0; sweep();
       const tok = crypto.randomBytes(32).toString('base64url'), csrf = crypto.randomBytes(24).toString('base64url');
-      db.prepare('INSERT INTO web_sessions VALUES (?,?,?,?)').run(sha256(tok), csrf, Date.now(), Date.now());
+      db.prepare('INSERT INTO web_sessions (token_hash,csrf,created_at,last_seen) VALUES (?,?,?,?)').run(sha256(tok), csrf, Date.now(), Date.now());
       log('INFO', 'web admin: signed in');
       return sendJson(res, 200, { csrf }, { 'set-cookie': cookie(tok, MAX_MS / 1000) }), true;
     }

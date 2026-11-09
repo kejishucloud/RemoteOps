@@ -28,6 +28,15 @@ const nextCode = (offsetSteps = 0) => totp(secret, Date.now() + offsetSteps * 30
 before(async () => {
   owner = /client_token:\s+(\S+)/.exec(execFileSync('node', ['gateway/admin.js', 'client-create', 'owner', '--admin'], { env, encoding: 'utf8' }))[1];
   execFileSync('node', ['gateway/admin.js', 'device-create', 'box1'], { env, stdio: 'ignore' });
+  // 回滚兼容性测试：数据库已经由新版 Google 登录迁移至 8 列，
+  // 旧版 Gateway 必须继续能够创建 TOTP 会话，不得使用 INSERT INTO ... VALUES 无列名写法。
+  const migrated = openTestDb();
+  migrated.exec(`
+    ALTER TABLE web_sessions ADD COLUMN expires_at INTEGER;
+    ALTER TABLE web_sessions ADD COLUMN idle_ms INTEGER;
+    ALTER TABLE web_sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'totp';
+    ALTER TABLE web_sessions ADD COLUMN subject TEXT;
+  `);
   gw = spawn('node', ['gateway/server.js', '--port', String(PORT), '--db', dbPath], { stdio: 'pipe' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch {} await sleep(100); }
 });
