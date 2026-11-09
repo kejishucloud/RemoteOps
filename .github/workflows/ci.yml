@@ -31,3 +31,5 @@ jobs:
         run: npm ci --omit=dev
       - name: Run automated tests
         run: npm test
+      - name: Verify release, memory and SQLite backup drills
+        run: python -m unittest discover -s test -p test_ops_guard.py -v
