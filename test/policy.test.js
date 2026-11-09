@@ -58,3 +58,9 @@ test('user policy extends defaults', () => {
   const u = loadPolicy(f);
   assert.ok(check(u, 'read_file', { path: '/srv/private/a' })); assert.ok(check(u, 'read_file', { path: '~/.ssh/x' }));
 });
+
+// Windows PowerShell 和 CMD 对家目录有不同写法，仍必须阻止密钥路径。
+test('home secret paths with Windows separators and variables are protected', () => {
+  for (const command of ['type ~\\.ssh\\id_rsa', 'type %USERPROFILE%\\.ssh\\id_rsa', 'type $env:USERPROFILE\\.ssh\\id_rsa'])
+    denied('start_process', { command });
+});

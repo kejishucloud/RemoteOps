@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cleanupResources } from './fixtures/resource-cleanup.js';
 import { spawn, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
@@ -19,7 +20,7 @@ before(async () => {
   gw = spawn('node', ['gateway/server.js', '--port', String(PORT), '--db', dbPath, '--public-url', 'https://mcp.example.com'], { stdio: 'pipe' });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch {} await sleep(100); }
 });
-after(() => { gw.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { await cleanupResources({ directory: tmp, processes: [gw] }); });
 
 const authzParams = (o = {}) => new URLSearchParams({ response_type: 'code', client_id: client?.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', resource: 'https://mcp.example.com/mcp', ...o });
 const token = (body) => fetch(`${BASE}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) });

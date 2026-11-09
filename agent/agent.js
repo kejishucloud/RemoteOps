@@ -98,6 +98,22 @@ const childPath = () => [...new Set([...(process.env.PATH || '').split(path.deli
 const PASS_ENV = ['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_SESSION_TYPE', 'XDG_CURRENT_DESKTOP', 'LANG', 'LC_ALL'];
 const childEnv = () => ({ PATH: childPath(), ...Object.fromEntries(PASS_ENV.filter((k) => process.env[k]).map((k) => [k, process.env[k]])) });
 
+/**
+ * Check whether a local executable can be found without executing it.
+ * Windows may raise "Connection closed" instead of ENOENT when spawn fails.
+ * @param {string} command Executable name or path.
+ * @returns {boolean} Whether the executable exists on the child PATH.
+ */
+function executableOnPath(command) {
+  const direct = path.isAbsolute(command) || command.includes('/') || command.includes('\\');
+  const folders = direct ? [''] : childPath().split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === 'win32' ?
+    (process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';') : [];
+  const filenames = path.extname(command) ? [command] : [command, ...extensions.map((ext) => command + ext)];
+  return folders.some((folder) => filenames.some((filename) =>
+    fs.existsSync(folder ? path.join(folder, filename) : filename)));
+}
+
 async function connectStdio(command, onExit) {
   const [cmd, ...cmdArgs] = command;
   const transport = new StdioClientTransport({ command: cmd, args: cmdArgs, env: childEnv(), stderr: 'inherit' });
@@ -105,7 +121,7 @@ async function connectStdio(command, onExit) {
   try { await withTimeout(client.connect(transport), START_TIMEOUT_MS, 'start timed out'); }
   catch (e) {
     await client.close().catch(() => {});
-    if (e?.code === 'ENOENT' || /ENOENT/.test(e?.message || ''))
+    if (e?.code === 'ENOENT' || /ENOENT/.test(e?.message || '') || (process.platform === 'win32' && !executableOnPath(cmd)))
       throw new Error(`command "${cmd}" not found on this device. Use its absolute path, or add its folder to "extra_path" in ~/.config/remote-mcp/device.json`);
     throw e;
   }

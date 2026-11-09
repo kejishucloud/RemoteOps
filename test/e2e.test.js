@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { cleanupResources } from './fixtures/resource-cleanup.js';
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,6 +8,12 @@ import { DatabaseSync } from 'node:sqlite';
 const PORT = 18765, BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rmcp-'));
 const dbPath = path.join(tmp, 'g.db');
+const dbConnections = new Set();
+const openTestDb = () => {
+  const connection = new DatabaseSync(dbPath);
+  dbConnections.add(connection);
+  return connection;
+};
 const env = { ...process.env, RMCP_DB: dbPath };
 const procs = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +49,7 @@ before(async () => {
   agent = startAgent();
   await sleep(1000);
 });
-after(() => { procs.forEach((p) => p.kill()); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { await cleanupResources({ directory: tmp, processes: procs, databases: dbConnections }); });
 
 test('health', async () => {
   assert.deepEqual(await (await fetch(`${BASE}/health`)).json(), { status: 'ok', version: '0.1.0' });
@@ -89,7 +96,7 @@ test('routing survives clients that open a new session per call', async () => {
 });
 
 test('audit log has metadata but no payload', () => {
-  const db = new DatabaseSync(dbPath);
+  const db = openTestDb();
   const rows = db.prepare("SELECT * FROM audit_logs WHERE tool='echo' ORDER BY id").all();
   assert.ok(rows.length >= 1);
   assert.equal(rows[0].client_id, 'tester'); assert.equal(rows[0].device_id, 'dev1'); assert.equal(rows[0].status, 'success');
