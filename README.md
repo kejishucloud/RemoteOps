@@ -55,6 +55,10 @@ bash scripts/bootstrap-macos.sh --apply
 
 在 ChatGPT 中新建自定义 MCP 服务，URL 为 `https://gateway.example.com/mcp`，身份验证选择 OAuth。Gateway 将提供 `/.well-known/oauth-authorization-server`、`/authorize`、`/token` 和动态客户端注册。OAuth 授权通过 Gateway 的 Owner Token 审批；**不得把 Owner Token 写入任何聊天、公开仓库或日志**。
 
+## ChatGPT MCP Apps 图形界面
+
+支持原生 MCP Apps 的文件预览和配置编辑资源，Gateway 将 /mcp 的 resources/list、resources/read 转发到已授权设备的 MCP 后端，同时保留工具本身的 UI 资源声明和 CSP。多设备请求支持设备作用域的资源 URI，不会将 UI 内容写入仓库。具体协议、验证与安全升级请阅读 [MCP Apps 开发与验收](docs/MCP_APPS.md)。
+
 ## 管理控制台
 
 打开 Gateway 的 HTTPS 地址下的 /admin/，完成双因素认证后访问运行总览、设备管理、使用量统计、认证信息、ChatGPT 自定义连接展示、操作审计、设备配对及系统设置。

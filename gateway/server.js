@@ -6,6 +6,7 @@ import { openDb, sha256, now } from './db.js';
 import { createOAuth } from './oauth.js';
 import { createPairing } from './pairing.js';
 import { createWeb } from './web.js';
+import { GatewayUiResources, normalizeUiResources } from './ui-resources.js';
 
 const VERSION = '0.1.0';
 const PROTOCOL_VERSION = 1;
@@ -153,6 +154,8 @@ const withDeviceId = (t) => ({
     device_id: { type: 'string', description: 'Target device (see devices_list). Optional if one was chosen with device_select.' } } },
 });
 
+const uiResourceGateway = new GatewayUiResources({ devices, resolveDevice, relay });
+
 async function handleRpc(ctx, msg) {
   const { client, session } = ctx;
   const { method, params = {}, id } = msg;
@@ -160,11 +163,31 @@ async function handleRpc(ctx, msg) {
     case 'ping': return {};
     case 'tools/list': {
       if (ctx.mode === 'stable') return { tools: [...GATEWAY_TOOLS, ...builtinSnapshot().map(withDeviceId)] };
-      const dev = devices.get(resolveDevice(ctx)) ?? [...devices.values()][0]; // 'all': whatever the selected device exposes right now
-      return { tools: [...GATEWAY_TOOLS, ...(dev?.tools ?? []).map(withDeviceId)] };
+      const deviceId = resolveDevice(ctx) ?? [...devices.keys()][0];
+      const dev = devices.get(deviceId); // 动态模式能将资源明确绑定到设备。
+      return { tools: [...GATEWAY_TOOLS, ...(dev?.tools ?? []).map((tool) =>
+        withDeviceId(uiResourceGateway.scopeTool(tool, deviceId)))] };
     }
     case 'tools/call': return callTool(ctx, params, id);
-    case 'resources/list': return { resources: [] };
+    case 'resources/list': return uiResourceGateway.list(ctx);
+    case 'resources/read': {
+      // 只保存资源读取耗时与结果，不记录 URI 对应的文件内容或完整 HTML。
+      const started = Date.now();
+      let status = 'success', errorCode = null;
+      try {
+        return await uiResourceGateway.read(ctx, params);
+      } catch (error) {
+        status = 'error';
+        errorCode = String(error.rpc?.code ?? 'RESOURCE_ERROR');
+        throw error;
+      } finally {
+        audit({
+          client_id: client.client_id, device_id: resolveDevice(ctx),
+          tool: 'resources/read', duration_ms: Date.now() - started,
+          status, error_code: errorCode,
+        });
+      }
+    }
     case 'prompts/list': return { prompts: [] };
     default: throw rpcError(-32601, `Method not found: ${method}`);
   }
@@ -204,7 +227,8 @@ async function callTool(ctx, params, rpcId) {
       if (typeof args.name === 'string' && args.name) {
         const t = dev.tools.find((x) => x.name === args.name);
         if (!t) throw new RelayError('UNKNOWN_TOOL', `No tool ${args.name.slice(0, 80)} on ${deviceId}`);
-        return { content: [{ type: 'text', text: JSON.stringify(t, null, 2) }] };
+        uiResourceGateway.rememberTool(ctx, deviceId, t.name);
+        return { content: [{ type: 'text', text: JSON.stringify(uiResourceGateway.scopeTool(t, deviceId), null, 2) }] };
       }
       // a tool belongs to the added server whose prefix it carries, otherwise to the built-in one
       const extra = dev.backends.filter((b) => b.prefix && b.status === 'running');
@@ -227,7 +251,8 @@ async function callTool(ctx, params, rpcId) {
     const timeout = Number.isFinite(wanted) ? Math.min(Math.max(cfg.callTimeoutMs, wanted + 5000), 300000) : cfg.callTimeoutMs;
     const promise = relay(deviceId, 'tools/call', { name: tool, arguments: forwardArgs }, timeout);
     const result = await promise;
-    return result;
+    uiResourceGateway.rememberTool(ctx, deviceId, tool);
+    return uiResourceGateway.scopeResult(result, deviceId, tool);
   } catch (e) {
     if (!(e instanceof RelayError) && !e.code) throw e;
     status = 'error'; errCode = e.code; request_id = e.request_id ?? null;
@@ -271,7 +296,7 @@ async function handleMcp(req, res) {
       jsonrpc: '2.0', id: msg.id,
       result: {
         protocolVersion: MCP_VERSIONS.includes(asked) ? asked : MCP_VERSIONS[0],
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: {} },
         serverInfo: { name: 'remote-mcp-gateway', version: VERSION },
       },
     }, { 'mcp-session-id': session_id });
@@ -371,7 +396,7 @@ function onDevice(ws, row) {
       clearTimeout(helloTimer);
       devices.get(deviceId)?.ws.close(4000, 'replaced'); // newest connection wins
       const session_id = crypto.randomUUID();
-      dev = { ws, sessionId: session_id, lastSeen: Date.now(), tools: m.tools ?? [], pending: new Map(), backends: [], custom: m.custom_backends === true };
+      dev = { ws, sessionId: session_id, lastSeen: Date.now(), tools: m.tools ?? [], resources: normalizeUiResources(m.resources), pending: new Map(), backends: [], custom: m.custom_backends === true };
       devices.set(deviceId, dev);
       db.prepare('UPDATE devices SET name=COALESCE(?,name), platform=?, hostname=?, capabilities=?, last_seen=? WHERE device_id=?')
         .run(m.name ?? null, m.platform ?? null, m.hostname ?? null, JSON.stringify((dev.tools).map((t) => t.name)), now(), deviceId);
@@ -387,6 +412,7 @@ function onDevice(ws, row) {
       return ws.send(JSON.stringify({ type: 'pong' }));
     }
     if (m.type === 'tools_changed') { if (Array.isArray(m.tools)) dev.tools = m.tools; return; }
+    if (m.type === 'resources_changed') { dev.resources = normalizeUiResources(m.resources); return; }
     if (m.type === 'backends_status') { if (Array.isArray(m.backends)) dev.backends = m.backends.slice(0, 20); return; }
     if (m.type === 'response') {
       const p = dev.pending.get(m.request_id);
