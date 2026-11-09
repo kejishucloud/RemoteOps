@@ -1,7 +1,7 @@
 'use strict';
 // No innerHTML anywhere: every value (hostnames, tool names, ...) is untrusted and goes through textContent.
 const $ = (s, r = document) => r.querySelector(s);
-let csrf = null, tab = 'devices', timer = null, detail = null;
+let csrf = null, tab = 'overview', timer = null, detail = null;
 
 function h(tag, props, ...kids) {
   const e = document.createElement(tag);
@@ -23,7 +23,7 @@ async function api(path, opts = {}) {
   return data;
 }
 function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.hidden = false; t.style.color = bad ? 'var(--bad)' : ''; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 4000); }
-const ago = (iso) => { if (!iso) return 'never'; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`; };
+const ago = (iso) => { if (!iso) return '从未'; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000); return s < 60 ? '刚刚' : s < 3600 ? `${Math.floor(s / 60)} 分钟前` : s < 86400 ? `${Math.floor(s / 3600)} 小时前` : `${Math.floor(s / 86400)} 天前`; };
 const confirmDo = async (msg, fn) => { if (!confirm(msg)) return; try { await fn(); } catch (e) { toast(e.message, true); } };
 
 // ---- login ----
@@ -43,23 +43,121 @@ $('#login-form').addEventListener('submit', async (e) => {
 });
 $('#logout').addEventListener('click', async () => { try { await api('/logout', { body: {} }); } catch {} showLogin(); });
 
-function showApp() { $('#login').hidden = true; $('#app').hidden = false; $('#logout').hidden = false; render(); clearInterval(timer); timer = setInterval(() => { if (!document.hidden && tab !== 'audit') render(); }, 10000); }
-document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b)); render(); }));
+/**
+ * 打开工作台并加载持久化主题/刷新频率。
+ * @returns {void} 无
+ */
+function showApp() {
+  $('#login').hidden = true;
+  $('#app').hidden = false;
+  $('#logout').hidden = false;
+  render();
+  clearInterval(timer);
+  timer = setInterval(() => { if (!document.hidden && !['audit', 'settings'].includes(tab)) render(); }, 15000);
+  loadUISettings().catch((error) => toast('无法读取显示设置：' + error.message, true));
+}
+
+const pageInfo = {
+  overview: ['运行总览', '统一查看设备状态、连接与工具调用情况。'],
+  devices: ['设备管理', '查看跨平台 Agent 连接并管理各设备的 MCP 工具。'],
+  usage: ['使用量统计', '分析网关工具调用趋势、延迟及错误情况。'],
+  clients: ['认证信息', '管理 OAuth 客户端、令牌和后台安全会话。'],
+  chatgpt: ['ChatGPT 插件展示', '配置自定义 MCP 服务的展示信息与接入说明。'],
+  audit: ['操作审计', '检索各类工具请求的安全审计记录。'],
+  pairing: ['设备配对', '通过限时授权窗口添加新的远程设备。'],
+  settings: ['系统设置', '配置主题、刷新频率与连接展示信息。'],
+};
+
+/**
+ * 统一的前端路由；不会修改浏览器 URL 或泄露设备信息。
+ * @param {string} name 目标页面名称
+ * @returns {void} 无
+ */
+function navigate(name) {
+  if (!pageInfo[name]) return;
+  tab = name;
+  document.querySelectorAll('.tabs button').forEach((button) =>
+    button.classList.toggle('active', button.dataset.tab === name));
+  render();
+}
+document.querySelectorAll('.tabs button').forEach((button) =>
+  button.addEventListener('click', () => navigate(button.dataset.tab)));
+$('#refresh').addEventListener('click', render);
+
+/** 当前页按需刷新并保持失败反馈。@returns {void} 无 */
 function render() {
-  for (const t of ['devices', 'clients', 'audit', 'pairing']) $('#tab-' + t).hidden = t !== tab;
-  ({ devices: renderDevices, clients: renderClients, audit: renderAudit, pairing: renderPairing })[tab]().catch((e) => e.message !== 'signed out' && toast(e.message, true));
+  for (const name of Object.keys(pageInfo)) $('#tab-' + name).hidden = name !== tab;
+  const [title, subtitle] = pageInfo[tab];
+  $('#page-title').textContent = title;
+  $('#page-subtitle').textContent = subtitle;
+  const routes = {
+    overview: renderOverview, devices: renderDevices, usage: renderUsage,
+    clients: renderClientCenter, chatgpt: renderChatGPT,
+    audit: renderAudit, pairing: renderPairing, settings: renderSettings,
+  };
+  routes[tab]().catch((error) => error.message !== 'signed out' && toast(error.message, true));
 }
 
 // ---- devices ----
+/**
+ * 设备管理：展示运行时获取的注册信息，不在仓库中保存实际设备名。
+ * @returns {Promise<void>} 无
+ */
 async function renderDevices() {
   if (detail) return renderDeviceDetail();
-  const list = await api('/devices'), root = $('#tab-devices'), items = [];
-  for (const d of list) items.push(h('div', { class: 'item' },
-    h('div', { class: 'main' }, h('div', { class: 'name' }, h('span', { class: 'dot' + (d.status === 'online' ? ' on' : '') }), d.name || d.device_id),
-      h('div', { class: 'sub' }, `${d.device_id} · ${d.platform || '?'} · ${d.hostname || '?'} · ${d.status === 'online' ? 'online' : 'last seen ' + ago(d.last_seen)}`)),
-    h('button', { class: 'small', onclick: () => { detail = d.device_id; render(); } }, 'MCP servers'),
-    h('button', { class: 'small danger', onclick: () => confirmDo(`Revoke ${d.device_id}? It is disconnected now and cannot reconnect.`, async () => { await api(`/devices/${encodeURIComponent(d.device_id)}/revoke`, { body: {} }); toast('Device revoked'); render(); }) }, 'Revoke')));
-  root.replaceChildren(...(items.length ? items : [h('p', { class: 'muted' }, 'No devices yet. Use the Pairing tab to add one.')]));
+  const devices = await api('/devices');
+  const root = $('#tab-devices');
+  const search = h('input', { type: 'search', placeholder: '搜索设备名称、系统或标识…', 'aria-label': '搜索设备' });
+  const createTile = (d) => {
+    const code = encodeURIComponent(d.device_id);
+    const online = d.status === 'online';
+    const platform = (d.platform || '').toLowerCase();
+    const platformLabel = platform.includes('darwin') ? 'macOS' : platform.includes('win') ? 'Windows'
+      : platform.includes('linux') ? 'Linux' : d.platform || '未知系统';
+    const avatar = platformLabel === 'Windows' ? '▦' : platformLabel === 'Linux' ? '⌘' : '◈';
+    return h('article', { class: 'device-tile' },
+      h('div', { class: 'device-top' }, h('div', { class: 'device-avatar', 'aria-hidden': 'true' }, avatar),
+        h('span', { class: 'pill ' + (online ? 'ok' : '') },
+          h('span', { class: 'dot' + (online ? ' on' : '') }), online ? '在线' : '离线')),
+      h('div', { class: 'device-title' }, d.name || d.device_id),
+      h('div', { class: 'device-meta' },
+        h('div', {}, platformLabel + ' · ' + d.device_id),
+        h('div', {}, d.hostname || '未报告主机名'),
+        h('div', {}, online ? '当前已连接' : '上次在线：' + ago(d.last_seen))),
+      h('div', { class: 'device-actions' },
+        h('button', { class: 'small', onclick: () => { detail = d.device_id; render(); } }, 'MCP 工具'),
+        h('button', { class: 'small ghost', onclick: async () => {
+          const next = prompt('设置设备显示名称（最多 64 个字符）', d.name || d.device_id);
+          if (next === null || next.trim() === (d.name || d.device_id)) return;
+          try { await api('/devices/' + code + '/rename', { body: { name: next.trim() } }); toast('设备名称已更新'); render(); }
+          catch (error) { toast(error.message, true); }
+        } }, '重命名'),
+        h('button', { class: 'small ghost', onclick: () => confirmDo('注销设备「' + d.device_id + '」？注销后必须重新配对才能连接。', async () => {
+          await api('/devices/' + code + '/revoke', { body: {} });
+          toast('设备已注销'); render();
+        }) }, '注销')));
+  };
+  const tiles = devices.map(createTile);
+  const list = h('div', { class: 'device-grid' }, ...tiles);
+  const empty = h('div', { class: 'empty-state' }, devices.length ? '没有匹配的设备。' : '尚无注册设备，请在「设备配对」中添加。');
+  const filter = () => {
+    const value = search.value.trim().toLocaleLowerCase();
+    let visible = 0;
+    tiles.forEach((tile, index) => {
+      const d = devices[index];
+      const match = [d.name, d.device_id, d.hostname, d.platform].some((part) => String(part || '').toLocaleLowerCase().includes(value));
+      tile.hidden = !match;
+      if (match) visible++;
+    });
+    empty.hidden = visible !== 0;
+  };
+  search.addEventListener('input', filter);
+  const summary = h('div', { class: 'list-head' },
+    h('div', {}, h('h2', {}, '已注册设备 · ' + devices.length), h('p', { class: 'muted' }, '在线、离线和 MCP 服务状态来自网关实时上报。')),
+    search);
+  const add = h('button', { class: 'small', onclick: () => navigate('pairing') }, '+ 添加设备');
+  root.replaceChildren(summary, h('div', { class: 'row' }, add), list, empty);
+  filter();
 }
 
 // ---- device detail: MCP servers ----
@@ -78,13 +176,13 @@ async function renderDeviceDetail() {
       h('div', { class: 'row' },
         h('div', { class: 'main' }, h('div', { class: 'name' }, sv.name, ' ', pillFor(sv.status), ' ', sv.builtin ? h('span', { class: 'pill' }, 'built-in') : null),
           h('div', { class: 'sub' }, sv.error ? h('span', { class: 'warn' }, sv.error) : `${sv.tools.length} tools${sv.prefix ? ' · prefix ' + sv.prefix : ''}${sv.builtin ? '' : ' · ' + sv.template}`)),
-        sv.tools.length ? h('button', { class: 'small ghost', onclick: () => { openTools.has(sv.name) ? openTools.delete(sv.name) : openTools.add(sv.name); render(); } }, toolsOpen ? 'Hide tools' : 'Tools') : null,
-        sv.builtin ? null : h('button', { class: 'small ghost', onclick: act(`/${encodeURIComponent(sv.name)}/update`, { enabled: !sv.enabled }) }, sv.enabled ? 'Disable' : 'Enable'),
-        sv.builtin ? null : h('button', { class: 'small danger', onclick: () => confirmDo(`Remove ${sv.name} from this device?`, act(`/${encodeURIComponent(sv.name)}/remove`, {}, 'Removed')) }, 'Remove')),
+        sv.tools.length ? h('button', { class: 'small ghost', onclick: () => { openTools.has(sv.name) ? openTools.delete(sv.name) : openTools.add(sv.name); render(); } }, toolsOpen ? '收起工具' : '工具') : null,
+        sv.builtin ? null : h('button', { class: 'small ghost', onclick: act(`/${encodeURIComponent(sv.name)}/update`, { enabled: !sv.enabled }) }, sv.enabled ? '禁用' : '启用'),
+        sv.builtin ? null : h('button', { class: 'small danger', onclick: () => confirmDo(`Remove ${sv.name} from this device?`, act(`/${encodeURIComponent(sv.name)}/remove`, {}, 'Removed')) }, '移除')),
       toolsOpen && !sv.builtin ? h('div', { class: 'tools' }, ...checks,
         h('div', { class: 'row' },
-          h('button', { class: 'small', onclick: async (e) => { const names = [...e.target.closest('.tools').querySelectorAll('input[data-tool]')].filter((i) => i.checked).map((i) => i.dataset.tool); await act(`/${encodeURIComponent(sv.name)}/update`, { enabled_tools: names }, 'Tools saved')(); } }, 'Save'),
-          h('button', { class: 'small ghost', onclick: act(`/${encodeURIComponent(sv.name)}/update`, { enabled_tools: null }, 'Reset to defaults') }, 'Reset to defaults'))) : null);
+          h('button', { class: 'small', onclick: async (e) => { const names = [...e.target.closest('.tools').querySelectorAll('input[data-tool]')].filter((i) => i.checked).map((i) => i.dataset.tool); await act(`/${encodeURIComponent(sv.name)}/update`, { enabled_tools: names }, 'Tools saved')(); } }, '保存'),
+          h('button', { class: 'small ghost', onclick: act(`/${encodeURIComponent(sv.name)}/update`, { enabled_tools: null }, '恢复默认') }, '恢复默认'))) : null);
   });
 
   // add form
@@ -96,34 +194,34 @@ async function renderDeviceDetail() {
     else { desc.textContent = 'Runs any command as this device\'s user (it must be installed there; an absolute path is safest). Prefer a template when one exists.'; fields.append(h('input', { id: 'c-name', placeholder: 'name (a-z, 0-9, -)' }), h('input', { id: 'c-cmd', placeholder: 'command, e.g. npx' }), h('textarea', { id: 'c-args', rows: 3, placeholder: 'one argument per line' })); }
   };
   sel.addEventListener('change', draw); draw();
-  const add = h('div', { class: 'item col' }, h('div', { class: 'name' }, 'Add an MCP server'), sel, desc, fields,
+  const add = h('div', { class: 'item col' }, h('div', { class: 'name' }, '添加 MCP 服务'), sel, desc, fields,
     h('div', { class: 'row' }, h('button', { class: 'small', onclick: async () => {
       const body = { template: sel.value, params: {} };
       if (sel.value === 'custom') { body.name = $('#c-name').value.trim(); body.params = { command: $('#c-cmd').value.trim(), args: $('#c-args').value.split('\n').map((x) => x.trim()).filter(Boolean) }; }
       else fields.querySelectorAll('[data-param]').forEach((i) => (body.params[i.dataset.param] = i.checked));
       try { await api(base, { body }); toast('Added. The device is starting it (first run may download the package).'); render(); } catch (e) { toast(e.message, true); }
-    } }, 'Add'), d.device.online ? null : h('span', { class: 'sub' }, 'Device is offline: it will start when it reconnects.')));
+    } }, '添加'), d.device.online ? null : h('span', { class: 'sub' }, '设备当前离线，重连后将启动服务。')));
 
   root.replaceChildren(
-    h('div', { class: 'row' }, h('button', { class: 'small ghost', onclick: () => { detail = null; render(); } }, '← Devices'), h('div', { class: 'name' }, d.device.name || d.device.device_id, ' ', h('span', { class: 'pill ' + (d.device.online ? 'ok' : '') }, d.device.online ? 'online' : 'offline'))),
-    h('h2', {}, 'MCP servers on this device'), ...rows, add);
+    h('div', { class: 'row' }, h('button', { class: 'small ghost', onclick: () => { detail = null; render(); } }, '← 返回设备列表'), h('div', { class: 'name' }, d.device.name || d.device.device_id, ' ', h('span', { class: 'pill ' + (d.device.online ? 'ok' : '') }, d.device.online ? 'online' : 'offline'))),
+    h('h2', {}, '当前设备的 MCP 服务'), ...rows, add);
   if (d.servers.some((x) => x.status === 'starting' || x.status === 'waiting for agent')) { clearTimeout(renderDeviceDetail.t); renderDeviceDetail.t = setTimeout(() => detail && tab === 'devices' && renderDeviceDetail().catch(() => {}), 3000); }
 }
 
 // ---- clients ----
-const modeSelect = (c) => h('label', { class: 'sub' }, 'Tool list: ', h('select', { class: 'inline', onchange: async (e) => { try { await api('/clients/mode', { body: { client_id: c.principal, mode: e.target.value } }); toast('Saved. Reconnect the client to refresh its tool list.'); } catch (err) { toast(err.message, true); } } },
-  h('option', { value: 'stable', selected: c.tool_mode === 'stable' }, 'fixed (recommended)'), h('option', { value: 'all', selected: c.tool_mode === 'all' }, 'live (changes with device)')));
+const modeSelect = (c) => h('label', { class: 'sub' }, '工具列表模式：', h('select', { class: 'inline', onchange: async (e) => { try { await api('/clients/mode', { body: { client_id: c.principal, mode: e.target.value } }); toast('Saved. Reconnect the client to refresh its tool list.'); } catch (err) { toast(err.message, true); } } },
+  h('option', { value: 'stable', selected: c.tool_mode === 'stable' }, '固定列表（推荐）'), h('option', { value: 'all', selected: c.tool_mode === 'all' }, '动态列表（随设备变化）')));
 async function renderClients() {
   const { static: st, oauth } = await api('/clients'), root = $('#tab-clients');
   const stat = st.map((c) => h('div', { class: 'item' },
     h('div', { class: 'main' }, h('div', { class: 'name' }, c.client_id, ' ', c.is_admin ? h('span', { class: 'pill' }, 'owner') : null, ' ', c.revoked_at ? h('span', { class: 'pill err' }, 'revoked') : null),
       h('div', { class: 'sub' }, `static token · created ${ago(c.created_at)} · last used ${ago(c.last_used)}`), c.revoked_at || c.is_admin ? null : modeSelect(c)),
-    c.revoked_at ? null : h('button', { class: 'small danger', onclick: () => confirmDo(`Revoke token "${c.client_id}"?` + (c.is_admin ? ' This is an OWNER token.' : ''), async () => { await api(`/clients/${encodeURIComponent(c.client_id)}/revoke`, { body: {} }); toast('Token revoked'); render(); }) }, 'Revoke')));
+    c.revoked_at ? null : h('button', { class: 'small danger', onclick: () => confirmDo(`Revoke token "${c.client_id}"?` + (c.is_admin ? ' This is an OWNER token.' : ''), async () => { await api(`/clients/${encodeURIComponent(c.client_id)}/revoke`, { body: {} }); toast('Token revoked'); render(); }) }, '撤销')));
   const oa = oauth.map((c) => h('div', { class: 'item' },
-    h('div', { class: 'main' }, h('div', { class: 'name' }, c.client_name, ' ', h('span', { class: 'pill ' + (c.active_grants ? 'ok' : '') }, c.active_grants ? 'authorized' : 'no active grant')),
+    h('div', { class: 'main' }, h('div', { class: 'name' }, c.client_name, ' ', h('span', { class: 'pill ' + (c.active_grants ? 'ok' : '') }, c.active_grants ? '已授权' : '无有效授权')),
       h('div', { class: 'sub' }, `OAuth · registered ${ago(c.created_at)} · last used ${ago(c.last_used)}`), modeSelect(c)),
-    h('button', { class: 'small danger', onclick: () => confirmDo(`Remove "${c.client_name}"? It must be approved again to reconnect.`, async () => { await api(`/oauth/${encodeURIComponent(c.client_id)}/revoke`, { body: {} }); toast('Client removed'); render(); }) }, 'Remove')));
-  root.replaceChildren(h('h2', {}, 'OAuth clients'), ...(oa.length ? oa : [h('p', { class: 'muted' }, 'None')]), h('h2', {}, 'Static tokens'), ...(stat.length ? stat : [h('p', { class: 'muted' }, 'None')]));
+    h('button', { class: 'small danger', onclick: () => confirmDo(`Remove "${c.client_name}"? It must be approved again to reconnect.`, async () => { await api(`/oauth/${encodeURIComponent(c.client_id)}/revoke`, { body: {} }); toast('Client removed'); render(); }) }, '移除')));
+  root.replaceChildren(h('h2', {}, 'OAuth 授权客户端'), ...(oa.length ? oa : [h('p', { class: 'muted' }, '暂无')]), h('h2', {}, '静态访问令牌'), ...(stat.length ? stat : [h('p', { class: 'muted' }, '暂无')]));
 }
 
 // ---- audit ----
@@ -137,8 +235,8 @@ async function renderAudit() {
   const table = h('div', { class: 'scroll' }, h('table', {}, h('thead', {}, h('tr', {}, ...['time', 'client', 'device', 'tool', 'ms', 'status', 'detail'].map((c) => h('th', {}, c)))),
     h('tbody', {}, ...rows.map((r) => h('tr', {}, h('td', {}, new Date(r.timestamp).toLocaleString()), cell(r, 'client_id'), cell(r, 'device_id'), cell(r, 'tool'), cell(r, 'duration_ms'),
       h('td', {}, h('span', { class: 'pill ' + (r.status === 'success' ? 'ok' : 'err') }, r.error_code || r.status)), h('td', { class: 'sub' }, r.error_detail || ''))))));
-  root.replaceChildren(h('div', { class: 'filters' }, input('client', 'client'), input('device', 'device'), input('tool', 'tool'), status), rows.length ? table : h('p', { class: 'muted' }, 'No matching activity.'),
-    h('p', { class: 'muted' }, 'Metadata only. Arguments and output are never stored; policy denials keep just the reason.'));
+  root.replaceChildren(h('div', { class: 'filters' }, input('client', 'client'), input('device', 'device'), input('tool', 'tool'), status), rows.length ? table : h('p', { class: 'muted' }, '没有符合条件的审计记录。'),
+    h('p', { class: 'muted' }, '只记录调用元数据，不保存工具参数与输出。'));
 }
 
 // ---- pairing ----
@@ -150,11 +248,11 @@ async function renderPairing() {
     h('button', { class: 'small', onclick: async () => { try { await api('/pairing/approve', { body: { id: r.id } }); toast('Approved. The device is collecting its credentials.'); render(); } catch (e) { toast(e.message, true); } } }, 'Approve'),
     h('button', { class: 'small ghost', onclick: async () => { try { await api('/pairing/deny', { body: { id: r.id } }); render(); } catch (e) { toast(e.message, true); } } }, 'Deny')));
   root.replaceChildren(
-    h('div', { class: 'item' }, h('div', { class: 'main' }, h('div', { class: 'name' }, p.open_until ? `Window open · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} left` : 'Pairing is closed'),
-      h('div', { class: 'sub' }, p.open_until ? 'On the new device run: node agent/agent.js pair <gateway-url> --device-id <name>' : 'Open a short window, then run the pair command on the new device.')),
-      p.open_until ? h('button', { class: 'small ghost', onclick: async () => { await api('/pairing/close', { body: {} }); render(); } }, 'Close now')
-        : h('button', { class: 'small', onclick: async () => { await api('/pairing/open', { body: { minutes: 3 } }); render(); } }, 'Open for 3 min')),
-    ...(pend.length ? pend : p.open_until ? [h('p', { class: 'muted' }, 'Waiting for a device…')] : []));
+    h('div', { class: 'item' }, h('div', { class: 'main' }, h('div', { class: 'name' }, p.open_until ? `Window open · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} left` : '配对窗口已关闭'),
+      h('div', { class: 'sub' }, p.open_until ? 'On the new device run: node agent/agent.js pair <gateway-url> --device-id <name>' : '开放限时配对窗口，再从设备端发起配对。')),
+      p.open_until ? h('button', { class: 'small ghost', onclick: async () => { await api('/pairing/close', { body: {} }); render(); } }, '立即关闭')
+        : h('button', { class: 'small', onclick: async () => { await api('/pairing/open', { body: { minutes: 3 } }); render(); } }, '开放 3 分钟')),
+    ...(pend.length ? pend : p.open_until ? [h('p', { class: 'muted' }, '等待设备申请配对…')] : []));
 }
 
 // ---- boot ----

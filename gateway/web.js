@@ -9,9 +9,10 @@ import QRCode from 'qrcode';
 import { sha256, now } from './db.js';
 import { newTotpSecret, verifyTotp, otpauthUri } from './totp.js';
 import { CATALOG, NAME_RE } from '../agent/backends.js';
+import { ConsoleService } from './console-service.js';
 
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui');
-const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'] };
+const ASSETS = { '/admin/': ['index.html', 'text/html; charset=utf-8'], '/admin/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/admin/console-views.js': ['console-views.js', 'text/javascript; charset=utf-8'], '/admin/style.css': ['style.css', 'text/css; charset=utf-8'], '/admin/chatgpt-mark.svg': ['chatgpt-mark.svg', 'image/svg+xml'] };
 const IDLE_MS = 30 * 60_000, MAX_MS = 12 * 3600_000, LOCK_WINDOW = 15 * 60_000, LOCK_AFTER = 5;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -23,6 +24,7 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
   const get = (k) => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value ?? null;
   const set = (k, v) => db.prepare('INSERT INTO settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));
   const del = (k) => db.prepare('DELETE FROM settings WHERE key=?').run(k);
+  const consoleService = new ConsoleService({ db, publicUrl, listDevices });
 
   const baseHeaders = () => ({
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
@@ -120,7 +122,42 @@ export function createWeb({ db, publicUrl, log, devices, listDevices, revokeDevi
 
     if (p === '/logout' && req.method === 'POST') { db.prepare('DELETE FROM web_sessions WHERE token_hash=?').run(sha256(cookieOf(req))); return sendJson(res, 200, { ok: true }, { 'set-cookie': cookie('', 0) }), true; }
 
+    // ---- 管理驾驶舱：所有读取端点都必须通过后台会话认证 ----
+    if (p === '/overview' && req.method === 'GET') {
+      const days = Number(url.searchParams.get('days') || consoleService.settings().usage_period_days);
+      if (![7, 30, 90].includes(days)) return sendJson(res, 400, { error: 'invalid days' }), true;
+      return sendJson(res, 200, consoleService.overview(days)), true;
+    }
+    if (p === '/settings' && req.method === 'GET') return sendJson(res, 200, consoleService.settings()), true;
+    if (p === '/settings' && req.method === 'POST') {
+      try {
+        const saved = consoleService.updateSettings(m);
+        log('INFO', 'web admin: display settings updated');
+        return sendJson(res, 200, saved), true;
+      } catch (error) {
+        if (error instanceof TypeError) return sendJson(res, 400, { error: error.message }), true;
+        throw error;
+      }
+    }
+    if (p === '/credentials' && req.method === 'GET') return sendJson(res, 200, consoleService.credentials()), true;
+    if (p === '/credentials/revoke-sessions' && req.method === 'POST') {
+      const removed = consoleService.revokeOtherSessions(sha256(cookieOf(req)));
+      log('INFO', 'web admin: revoked other web sessions');
+      return sendJson(res, 200, { ok: true, removed }), true;
+    }
     if (p === '/devices' && req.method === 'GET') return sendJson(res, 200, listDevices()), true;
+    let renameMatch = /^\/devices\/([^/]+)\/rename$/.exec(p);
+    if (renameMatch && req.method === 'POST') {
+      try {
+        const id = decodeURIComponent(renameMatch[1]);
+        const updated = consoleService.renameDevice(id, m.name);
+        if (updated) log('INFO', 'web admin: device display name updated');
+        return sendJson(res, updated ? 200 : 404, { ok: updated }), true;
+      } catch (error) {
+        if (error instanceof TypeError) return sendJson(res, 400, { error: error.message }), true;
+        throw error;
+      }
+    }
     let mm;
     if ((mm = /^\/devices\/([^/]+)\/revoke$/.exec(p)) && req.method === 'POST') {
       const id = decodeURIComponent(mm[1]); const n = revokeDevice(id); log('INFO', `web admin: revoked device ${id}`);
