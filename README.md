@@ -1,34 +1,131 @@
 # RemoteOps
 
-基于 MCP 的**自托管多设备远程运维中心**，提供统一的 ChatGPT / MCP 接入入口，支持 macOS、Windows、Linux。服务端自行持有设备注册信息和审计记录；设备主动建立出站 WebSocket，不要求在工作站上开放入站端口。
+**RemoteOps 是一个自托管的多设备远程运维与 MCP 工具管理平台**，将 macOS、Windows、Linux 和 VPS 设备统一接入自有 Gateway，通过 ChatGPT 或其他兼容 MCP 的客户端集中访问设备工具。
 
-> 本项目基于 [SelfHostDesktopMCP](https://github.com/andyching168/SelfHostDesktopMCP) 改造，保留原项目 MIT 许可证及归属。远程终端具有系统用户权限；安装前务必审阅 [安全说明](docs/SECURITY.md)。
+项目面向个人开发者、多设备工作站和轻量研发团队。设备主动建立出站 WebSocket 连接，无需在每台工作站开放公网入站端口；设备注册、认证、工具路由和审计数据由自托管 Gateway 管理。
+
+> 本项目基于 [SelfHostDesktopMCP](https://github.com/andyching168/SelfHostDesktopMCP) 改造，保留原项目 MIT 许可证及归属。远程终端具有运行账户的系统权限。部署前请阅读[安全说明](docs/SECURITY.md)。
+
+## 界面预览
+
+### 运行总览
+
+集中查看注册设备、在线状态、工具调用量、调用成功率、授权客户端数量和近期调用趋势。运行质量区域用于快速观察平均调用耗时与失败调用情况。
+
+![RemoteOps 运行总览](docs/images/dashboard-overview.jpg)
+
+### 设备管理
+
+以设备卡片方式统一管理 macOS、Linux、Windows 等 Agent。支持设备搜索、在线状态查看、MCP 工具入口、设备重命名和注销。
+
+![RemoteOps 设备管理](docs/images/device-management.jpg)
+
+### 使用量统计
+
+按时间范围分析工具调用总量、成功与失败次数、平均耗时、工具调用趋势、高频工具排行及设备维度统计，辅助定位调用异常和性能瓶颈。
+
+![RemoteOps 使用量统计](docs/images/usage-statistics.jpg)
+
+## 核心功能
+
+### 1. 多平台设备接入
+
+- 支持 macOS、Windows、Linux 设备和 VPS Agent。
+- 每台设备独立身份与密钥，统一向 Gateway 建立出站 WebSocket 连接。
+- 展示设备名称、操作系统、主机标识、在线状态和最近心跳。
+- 支持设备注册、配对审批、重命名、注销及重新接入。
+- 设备能力受 Agent 运行账户权限及本地安全策略约束。
+
+### 2. 自托管 MCP Gateway
+
+- 自行部署 Gateway，集中管理设备连接、身份认证和工具请求路由。
+- 为 ChatGPT 及其他兼容 MCP 的客户端提供统一 MCP 接入地址。
+- 支持 HTTPS、OAuth 2.0、动态客户端注册及设备侧 WebSocket 通信。
+- 支持多设备工具调用与设备选择，避免为每台设备单独暴露公网服务。
+
+### 3. MCP 工具与资源管理
+
+- 查看设备暴露的 MCP 工具并执行远程工具调用。
+- 支持文件、目录、搜索、进程和会话等远程操作能力。
+- 支持 MCP Resources 的列表与读取转发。
+- 支持 MCP Apps UI 资源转发，保留工具关联的界面资源及安全策略。
+- 支持扩展 MCP 后端服务，并通过统一入口进行管理和调用。
+
+### 4. 运行总览与可观测性
+
+- 注册设备数、在线设备数和授权客户端数量。
+- 工具调用总量、成功率、成功/失败次数及平均耗时。
+- 按日期展示调用趋势，辅助观察平台负载变化。
+- 展示设备连接状态，快速定位离线设备。
+- 提供常用管理入口，减少日常运维操作步骤。
+
+### 5. 使用量统计与操作审计
+
+- 支持按时间范围查看调用统计。
+- 展示高频工具排行和设备维度调用分布。
+- 记录调用状态、耗时等审计元数据。
+- 审计记录不以完整工具输出或敏感参数作为统计依据。
+- 可用于性能分析、故障追踪和使用情况复盘。
+
+### 6. 管理控制台
+
+- 运行总览、设备管理、使用量统计。
+- 认证信息、ChatGPT 连接展示。
+- 操作审计、设备配对和系统设置。
+- 简体中文与英文切换。
+- 响应式布局，适配桌面和移动端。
+- 统一的深色/浅色主题及本地静态资源。
+
+### 7. 身份认证与安全控制
+
+- Owner Token 与管理员认证机制。
+- OAuth 2.0 授权流程及客户端管理。
+- Google OpenID Connect 管理员白名单登录，可选 30 天保持登录。
+- 双因素认证、CSRF 防护、Origin 校验及安全 Cookie。
+- 设备独立密钥、配对审批和设备撤销。
+- 敏感路径保护、危险命令限制及最小权限运行建议。
+- 严格内容安全策略（CSP）和敏感信息扫描。
+
+### 8. 运维、备份与恢复
+
+- SQLite 持久化设备、授权及审计相关数据。
+- 提供 VPS 发布审计、资源监控和 SQLite 备份/恢复核验工具。
+- 支持 systemd、launchd 和 Windows 计划任务等运行方式。
+- 提供部署、升级、回滚和故障排查文档。
+- GitHub Actions 多平台测试与安全扫描。
 
 ## 架构
 
 ```text
-ChatGPT / MCP 客户端
-       |
-       | HTTPS + OAuth2 /mcp
-       v
-RemoteOps Gateway（通用 Linux / macOS 主机或容器）
-       |
-       | HTTPS 反向代理或可用的安全公网入口
-       | WSS /device + 每台设备独立密钥
-       +----- macOS Agent  (launchd，普通用户)
-       +----- Windows Agent（计划任务，指定用户）
-       +----- Linux Agent  (systemd，非特权用户)
-                    |
-                MCP stdio / 本地工具服务
+ChatGPT / MCP Client
+        |
+        | HTTPS + OAuth 2.0 / MCP
+        v
+RemoteOps Gateway
+        |
+        | WSS /device + per-device credential
+        +----------------+----------------+----------------+
+        |                |                |                |
+    macOS Agent     Windows Agent     Linux Agent       VPS Agent
+        |                |                |                |
+    Local MCP       Local MCP         Local MCP         Local MCP
+    backends        backends          backends          backends
 ```
 
-## 要求
+Gateway 负责认证、设备注册、连接状态、工具路由、资源转发和审计；Agent 在设备本地调用 MCP 后端。设备主动连接 Gateway，不要求工作站开放公网入站端口。
 
-- Node.js >= 22.13、npm、Git；macOS 需 launchd，Linux 需 systemd，Windows 需 PowerShell 5.1+。
-- 对公网入口使用 HTTPS。推荐 Tailscale Funnel（无需自有域名），但也可使用反向代理。
-- **每台设备独立密钥**。不要上传 `device.json`、`owner-token`、`.env`、SQLite 数据或私钥。
+## 技术栈
 
-## 本机快速开始（macOS）
+- **运行环境：** Node.js 22.13+
+- **通信：** HTTPS、WebSocket / WSS、MCP
+- **认证：** OAuth 2.0、Google OpenID Connect、双因素认证
+- **持久化：** SQLite
+- **进程管理：** systemd、launchd、Windows Task Scheduler
+- **质量保障：** Node.js Test Runner、GitHub Actions、敏感信息扫描
+
+## 快速开始
+
+### macOS 本机检查
 
 ```bash
 git clone https://github.com/kejishucloud/RemoteOps.git
@@ -36,67 +133,75 @@ cd RemoteOps
 npm ci
 npm test
 bash scripts/bootstrap-macos.sh --check
-# 首次配对：在 Gateway 上运行 node gateway/admin.js pair
-# 设备端执行：
-# node agent/agent.js pair https://gateway.example.com --device-id example-macos
-bash scripts/bootstrap-macos.sh --apply
 ```
 
-脚本自动校验运行环境、安装固定版本 Desktop Commander、保护本地设备配置，并部署登录后自启的 LaunchAgent。已有配对设备无需重新配对。未指定 `--apply` 时只做检查，不替换正在运行的 Agent。**不要通过当前要重启的 RemoteOps Agent 本身执行 `--apply`**；请使用 Mac 本地终端或独立 SSH/远程控制通道，以免控制连接中断后安装步骤无法完成。
+首次配对需先在 Gateway 上开启配对审批，再在设备端执行 Agent 配对流程。确认检查结果后，使用部署脚本的 `--apply` 参数安装服务。
 
-## Linux 与 Windows
+**注意：** 不要通过当前需要重启的 RemoteOps Agent 本身执行其升级或重启操作。请使用本地终端或独立 SSH 通道，避免控制连接中断导致部署无法完成。
 
-- Linux Gateway：`sudo PUBLIC_URL=https://gateway.example.com bash scripts/bootstrap-linux-gateway.sh`，需要部署自己的 HTTPS/Funnel；该脚本不适合在已有同端口 Gateway 上盲目重复执行。
-- Linux Agent：`GATEWAY_URL=https://gateway.example.com DEVICE_ID=linux-main bash scripts/bootstrap-linux-agent.sh`（首先在 Gateway CLI 中打开配对审批窗口）。
-- Windows Agent：在 PowerShell 中以指定用户执行 `powershell -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1 -GatewayUrl https://gateway.example.com -DeviceId windows`。需先在 Gateway CLI 开启配对。
-- 验收 / 运维 / 回滚详见 [部署指南](docs/DEPLOYMENT.md)。
+### Linux Gateway 与 Agent
+
+- Gateway：`sudo PUBLIC_URL=https://gateway.example.com bash scripts/bootstrap-linux-gateway.sh`
+- Agent：`GATEWAY_URL=https://gateway.example.com DEVICE_ID=linux-main bash scripts/bootstrap-linux-agent.sh`
+
+### Windows Agent
+
+在 PowerShell 中执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1 -GatewayUrl https://gateway.example.com -DeviceId windows
+```
+
+完整步骤、反向代理、验收与回滚说明见[部署指南](docs/DEPLOYMENT.md)。
 
 ## ChatGPT 接入
 
-在 ChatGPT 中新建自定义 MCP 服务，URL 为 `https://gateway.example.com/mcp`，身份验证选择 OAuth。Gateway 将提供 `/.well-known/oauth-authorization-server`、`/authorize`、`/token` 和动态客户端注册。OAuth 授权通过 Gateway 的 Owner Token 审批；**不得把 Owner Token 写入任何聊天、公开仓库或日志**。
+在 ChatGPT 中配置自定义 MCP 服务，服务地址为：
 
-## ChatGPT MCP Apps 图形界面
+`https://gateway.example.com/mcp`
 
-支持原生 MCP Apps 的文件预览和配置编辑资源，Gateway 将 /mcp 的 resources/list、resources/read 转发到已授权设备的 MCP 后端，同时保留工具本身的 UI 资源声明和 CSP。多设备请求支持设备作用域的资源 URI，不会将 UI 内容写入仓库。具体协议、验证与安全升级请阅读 [MCP Apps 开发与验收](docs/MCP_APPS.md)。
+身份验证选择 OAuth。Gateway 提供 OAuth 元数据、授权、令牌及动态客户端注册端点。Owner Token 仅用于受控管理操作，**不得写入聊天内容、公开仓库或日志**。
 
-## 管理控制台
-
-打开 Gateway 的 HTTPS 地址下的 /admin/，完成双因素认证后访问运行总览、设备管理、使用量统计、认证信息、ChatGPT 自定义连接展示、操作审计、设备配对及系统设置。
-
-后台展示数据通过登录后的 API 动态加载。默认界面、测试和文档只使用通用示例，不包含部署者的设备清单、主机名称、私有路径或实际凭据。界面支持电脑与手机布局、浅色/深色/跟随系统主题，以及无需刷新页面的简体中文与英文切换，且不引入额外前端构建依赖。详见 [控制台功能及兼容性](docs/CONSOLE.md)、[UI System v3 设计规范](docs/UI_SYSTEM.md) 和 [中英文切换与响应式验收](docs/I18N.md)。
-
-## 工具能力
-
-支持设备列表与选择、文件读写、目录遍历、内容搜索、Shell/PowerShell 进程、会话管理和 MCP 扩展工具管理。Mac / Windows 的能力取决于 Agent 运行用户的操作系统权限；建议 VPS 单独使用无特权账户和 systemd 沙箱。设备侧安全策略会限制敏感路径及危险命令。
-
-## 测试、CI 与安全
+## 测试与安全检查
 
 ```bash
 npm ci
 npm test
-python3 scripts/secret_scan.py
+npm run check:secrets
 ```
 
-GitHub Actions 会在 Ubuntu、macOS 和 Windows 下运行 Node 22 测试，并扫描提交文件中常见凭据模式。不包含自动生产部署或远程重启：正式服务升级必须先备份，避免中断既有 VPN/FRP。
+测试覆盖 Gateway、Agent、设备配对、OAuth、管理控制台、MCP Apps 资源转发、工具策略及安全边界。Windows 专属用例和需要额外本地后端的集成用例会在不满足运行环境时跳过。
 
 ## 项目结构
 
 ```text
-agent/        设备侧 WebSocket / MCP 调度 / 安全策略
-gateway/      OAuth、设备注册、管理控制台、审计
-deploy/       原项目基础安装模板
-scripts/      平台自动化、敏感信息检查
-docs/         安全、部署、反向代理指南
-test/         单元与端到端测试
-.github/      CI
+agent/        设备侧 WebSocket、MCP 调度与安全策略
+gateway/      OAuth、设备注册、管理控制台与审计
+deploy/       基础部署模板
+scripts/      平台自动化、备份检查与敏感信息扫描
+docs/         安全、部署、控制台、MCP Apps 与运维文档
+test/         单元、集成与端到端测试
+.github/      CI 工作流
 ```
 
-许可证：MIT。感谢原作者及 Desktop Commander 开源贡献。
+## 文档
 
-## Google 登录
+- [部署指南](docs/DEPLOYMENT.md)
+- [安全说明](docs/SECURITY.md)
+- [管理控制台说明](docs/CONSOLE.md)
+- [MCP Apps 开发与验收](docs/MCP_APPS.md)
+- [UI System v3 设计规范](docs/UI_SYSTEM.md)
+- [Google 登录配置](docs/GOOGLE_LOGIN.md)
+- [可靠性运行手册](docs/OPS_RELIABILITY.md)
 
-管理后台支持 Google OpenID Connect 管理员白名单登录，以及可选 30 天保持登录。配置、风险和测试说明见 [Google 登录文档](docs/GOOGLE_LOGIN.md)。
+## 适用场景
 
-## VPS 发布审计与恢复演练
+- 个人开发者的 Mac、Windows、Linux 多设备统一管理。
+- 通过 ChatGPT 或 MCP 客户端远程访问个人工作站。
+- 自托管 AI Agent 与本地 MCP 工具的集中接入。
+- 轻量研发团队的远程设备管理与运维审计。
+- 需要保留自有身份认证、设备控制和审计数据的私有部署环境。
 
-提供只读协议审计、cgroup 内存监控和 SQLite 在线备份/隔离恢复核验工具；操作指南参见 [可靠性运行手册](docs/OPS_RELIABILITY.md)。运行中的 Agent 权限受限，不应通过其自身重启 VPS Agent。
+## 许可证与致谢
+
+本项目采用 MIT 许可证。感谢 [SelfHostDesktopMCP](https://github.com/andyching168/SelfHostDesktopMCP) 原项目及 Desktop Commander 开源社区的贡献。
