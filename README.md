@@ -12,19 +12,19 @@
 
 集中查看注册设备、在线状态、工具调用量、调用成功率、授权客户端数量和近期调用趋势。运行质量区域用于快速观察平均调用耗时与失败调用情况。
 
-![RemoteOps 运行总览](docs/images/dashboard-overview.svg)
+![RemoteOps 运行总览](https://cdn.jsdelivr.net/gh/kejishucloud/RemoteOps@12d62b72e5fe81058e9d910f3d01e34ee471a689/docs/images/dashboard-overview.svg)
 
 ### 设备管理
 
 以设备卡片方式统一管理 macOS、Linux、Windows 等 Agent。支持设备搜索、在线状态查看、MCP 工具入口、设备重命名和注销。
 
-![RemoteOps 设备管理](docs/images/device-management.svg)
+![RemoteOps 设备管理](https://cdn.jsdelivr.net/gh/kejishucloud/RemoteOps@12d62b72e5fe81058e9d910f3d01e34ee471a689/docs/images/device-management.svg)
 
 ### 使用量统计
 
 按时间范围分析工具调用总量、成功与失败次数、平均耗时、工具调用趋势、高频工具排行及设备维度统计，辅助定位调用异常和性能瓶颈。
 
-![RemoteOps 使用量统计](docs/images/usage-statistics.svg)
+![RemoteOps 使用量统计](https://cdn.jsdelivr.net/gh/kejishucloud/RemoteOps@12d62b72e5fe81058e9d910f3d01e34ee471a689/docs/images/usage-statistics.svg)
 
 ## 核心功能
 
